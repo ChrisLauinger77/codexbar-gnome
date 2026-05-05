@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <enum id="org.gnome.shell.extensions.codexbar.DisplayMode">
+    <value nick="used" value="0"/>
+    <value nick="remaining" value="1"/>
+  </enum>
+
+  <schema id="org.gnome.shell.extensions.codexbar" path="/org/gnome/shell/extensions/codexbar/">
+    <key name="refresh-interval" type="i">
+      <default>15</default>
+      <summary>Refresh interval in minutes</summary>
+    </key>
+    <key name="providers" type="s">
+      <default>'[{"name": "Gemini", "command": "/home/linuxbrew/.linuxbrew/bin/codexbar --provider gemini --source api --format json"}]'</default>
+      <summary>JSON string of configured AI providers</summary>
+    </key>
+    <key name="display-mode" enum="org.gnome.shell.extensions.codexbar.DisplayMode">
+      <default>'remaining'</default>
+      <summary>Whether to show used or remaining quota</summary>
+    </key>
+    <key name="first-run" type="b">
+      <default>true</default>
+      <summary>Whether this is the first time the extension is run</summary>
+    </key>
+  </schema>
+</schemalist>

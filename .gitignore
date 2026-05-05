@@ -1,0 +1,18 @@
+# GNOME Shell Extension temporary files
+schemas/gschemas.compiled
+*.shell-extension.zip
+
+# Temporary test files
+test_output.txt
+test_error.txt
+test_exec.js
+test_exec_simple.js
+test_output.txt
+
+# Node/Environment
+node_modules/
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
