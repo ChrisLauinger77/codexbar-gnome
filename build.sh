@@ -10,6 +10,9 @@ echo "Empaquetando extensión..."
 gnome-extensions pack \
     --extra-source=extension.js \
     --extra-source=prefs.js \
+    --extra-source=usageApi.js \
+    --extra-source=secret.js \
+    --extra-source=cookie_importer.py \
     --extra-source=stylesheet.css \
     --schema=schemas/org.gnome.shell.extensions.codexbar.gschema.xml \
     --force

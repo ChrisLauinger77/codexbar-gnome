@@ -1,24 +1,41 @@
 import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import Gtk from 'gi://Gtk';
 import Adw from 'gi://Adw';
 import { ExtensionPreferences, gettext as _ } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
+import { storeToken, loadToken, clearToken } from './secret.js';
 
-export default class CodexBarPreferences extends ExtensionPreferences {
-    fillPreferencesWindow(window) {
-        const settings = this.getSettings();
+const PREDEFINED_PROVIDERS = [
+    { id: 'codex', name: 'Codex', useApi: true, defaultCommand: '' },
+    { id: 'gemini', name: 'Gemini', useApi: false, defaultCommand: 'codexbar --provider gemini --source api --format json' },
+    { id: 'deepseek', name: 'DeepSeek', useApi: false, defaultCommand: 'codexbar --provider deepseek --source api --format json' },
+    { id: 'copilot', name: 'Copilot', useApi: false, defaultCommand: 'codexbar --provider copilot --source api --format json' },
+    { id: 'openrouter', name: 'OpenRouter', useApi: false, defaultCommand: 'codexbar --provider openrouter --source api --format json' },
+    { id: 'perplexity', name: 'Perplexity', useApi: false, defaultCommand: 'codexbar --provider perplexity --source api --format json' },
+    { id: 'mistral', name: 'Mistral', useApi: false, defaultCommand: 'codexbar --provider mistral --source api --format json' },
+];
 
-        const page = new Adw.PreferencesPage({
+const CodexBarPrefsPage = GObject.registerClass(
+class CodexBarPrefsPage extends Adw.PreferencesPage {
+    _init(settings) {
+        super._init({
             title: _('General'),
             icon_name: 'dialog-information-symbolic',
         });
-        window.add(page);
 
-        // General Group
-        const generalGroup = new Adw.PreferencesGroup({
+        this._settings = settings;
+        this._providerRows = [];
+
+        this.add(this._buildSettingsGroup());
+        this.add(this._buildProvidersGroup());
+        this.add(this._buildMaintenanceGroup());
+    }
+
+    _buildSettingsGroup() {
+        const group = new Adw.PreferencesGroup({
             title: _('Settings'),
         });
-        page.add(generalGroup);
 
         const refreshRow = new Adw.SpinRow({
             title: _('Refresh Interval (minutes)'),
@@ -26,83 +43,98 @@ export default class CodexBarPreferences extends ExtensionPreferences {
                 lower: 1,
                 upper: 1440,
                 step_increment: 1,
-                value: settings.get_int('refresh-interval'),
+                value: this._settings.get_int('refresh-interval'),
             }),
         });
-        settings.bind('refresh-interval', refreshRow.adjustment, 'value', Gio.SettingsBindFlags.DEFAULT);
-        generalGroup.add(refreshRow);
+        this._settings.bind('refresh-interval', refreshRow.adjustment, 'value', Gio.SettingsBindFlags.DEFAULT);
+        group.add(refreshRow);
 
         const displayModeRow = new Adw.ComboRow({
             title: _('Display Mode'),
             model: new Gtk.StringList({
                 strings: [_('Used'), _('Remaining')],
             }),
-            selected: settings.get_string('display-mode') === 'used' ? 0 : 1,
+            selected: this._settings.get_string('display-mode') === 'used' ? 0 : 1,
         });
         displayModeRow.connect('notify::selected', () => {
-            settings.set_string('display-mode', displayModeRow.selected === 0 ? 'used' : 'remaining');
+            this._settings.set_string('display-mode', displayModeRow.selected === 0 ? 'used' : 'remaining');
         });
-        generalGroup.add(displayModeRow);
+        group.add(displayModeRow);
 
-        const setupBtnRow = new Adw.ActionRow({
-            title: _('Show Setup Instructions'),
-            subtitle: _('Show the welcome screen again'),
-        });
-        const setupBtn = new Gtk.Button({
-            icon_name: 'help-about-symbolic',
-            valign: Gtk.Align.CENTER,
-            margin_top: 12,
-            margin_bottom: 12,
-        });
-        setupBtn.connect('clicked', () => {
-            settings.set_boolean('first-run', true);
-            // We can't easily trigger the main extension UI from here, 
-            // but setting first-run to true will make it appear on next refresh/load
-        });
-        setupBtnRow.add_suffix(setupBtn);
-        generalGroup.add(setupBtnRow);
+        return group;
+    }
 
-        // Providers Group
-        const providersGroup = new Adw.PreferencesGroup({
+    _buildProvidersGroup() {
+        const group = new Adw.PreferencesGroup({
             title: _('AI Providers'),
-            description: _('1. Install CLI: brew install steipete/tap/codexbar\n2. Configure command with --format json\n3. Prefer absolute paths (e.g. /home/linuxbrew/.linuxbrew/bin/codexbar)'),
+            description: _('Enable providers. Codex uses Direct API. Others use codexbar-cli with --source api.'),
         });
-        page.add(providersGroup);
 
-        const listBox = new Gtk.ListBox({
-            selection_mode: Gtk.SelectionMode.NONE,
-            css_classes: ['boxed-list'],
-        });
-        providersGroup.add(listBox);
-
-        const providersJson = settings.get_string('providers');
-        let providers = [];
+        const activeProvidersJson = this._settings.get_string('providers');
+        let activeProviders = [];
         try {
-            providers = JSON.parse(providersJson);
+            activeProviders = JSON.parse(activeProvidersJson);
         } catch (e) {
-            console.error('Failed to parse providers JSON:', e);
+            activeProviders = [];
         }
 
         const saveProviders = () => {
             const newProviders = [];
-            let row = listBox.get_first_child();
-            while (row) {
-                if (row._providerData) {
+            this._providerRows.forEach(row => {
+                if (row._enabledSwitch.active) {
                     newProviders.push({
-                        name: row._nameEntry.get_text(),
+                        id: row._id,
+                        name: row._name,
                         command: row._commandEntry.get_text(),
+                        useApi: row._useApi,
                     });
+                    
+                    if (row._useApi) {
+                        const token = row._tokenEntry.get_text();
+                        if (token) {
+                            storeToken(row._id, token);
+                        }
+                    }
                 }
-                row = row.get_next_sibling();
-            }
-            settings.set_string('providers', JSON.stringify(newProviders));
+            });
+            this._settings.set_string('providers', JSON.stringify(newProviders));
         };
 
-        const createProviderRow = (name = '', command = '') => {
-            const row = new Adw.ActionRow({
-                title: name || _('New Provider'),
+        const createProviderRow = (info, activeData = null) => {
+            const isEnabled = activeData !== null;
+            
+            // MIGRATION LOGIC: If the command is in the old format, use the new default
+            let command = info.defaultCommand;
+            if (activeData) {
+                if (activeData.command && (activeData.command.includes('--provider') || info.useApi)) {
+                    command = activeData.command;
+                } else {
+                    // Old format detected, force update to new default
+                    command = info.defaultCommand;
+                }
+            }
+            
+            const row = new Adw.ExpanderRow({
+                title: info.name,
+                subtitle: isEnabled ? _('Enabled') : _('Disabled'),
+                expanded: isEnabled,
             });
-            row._providerData = true;
+            
+            row._id = activeData ? activeData.id : info.id;
+            row._name = info.name;
+            row._useApi = info.useApi;
+
+            const enabledSwitch = new Gtk.Switch({
+                active: isEnabled,
+                valign: Gtk.Align.CENTER,
+            });
+            enabledSwitch.connect('notify::active', () => {
+                row.set_subtitle(enabledSwitch.active ? _('Enabled') : _('Disabled'));
+                row.expanded = enabledSwitch.active;
+                saveProviders();
+            });
+            row.add_suffix(enabledSwitch);
+            row._enabledSwitch = enabledSwitch;
 
             const box = new Gtk.Box({
                 orientation: Gtk.Orientation.VERTICAL,
@@ -113,58 +145,191 @@ export default class CodexBarPreferences extends ExtensionPreferences {
                 margin_end: 12,
             });
 
-            const nameEntry = new Gtk.Entry({
-                placeholder_text: _('Provider Name'),
-                text: name,
-            });
-            nameEntry.connect('changed', () => {
-                row.set_title(nameEntry.get_text() || _('New Provider'));
-                saveProviders();
-            });
-            row._nameEntry = nameEntry;
-            box.append(nameEntry);
+            if (info.useApi) {
+                const tokenEntry = new Gtk.PasswordEntry({
+                    placeholder_text: _('Authentication Cookie (starts with __Secure...)'),
+                    text: loadToken(row._id) || '',
+                });
+                tokenEntry.connect('changed', () => {
+                    storeToken(row._id, tokenEntry.get_text().trim());
+                    saveProviders();
+                });
+                row._tokenEntry = tokenEntry;
 
-            const commandEntry = new Gtk.Entry({
-                placeholder_text: _('CLI Command'),
-                text: command,
-            });
-            commandEntry.connect('changed', saveProviders);
-            row._commandEntry = commandEntry;
-            box.append(commandEntry);
+                const importBtn = new Gtk.Button({
+                    label: _('Auto-Login from Browser (Chrome/Brave)'),
+                    margin_top: 6,
+                });
+                
+                importBtn.connect('clicked', () => {
+                    this._importFromBrowser(row._id, tokenEntry);
+                });
+                
+                box.append(new Gtk.Label({ label: _('Session Cookies:'), xalign: 0 }));
+                box.append(tokenEntry);
+                box.append(importBtn);
+                row._commandEntry = new Gtk.Entry({ text: '' }); // Dummy
+            } else {
+                const commandEntry = new Gtk.Entry({
+                    placeholder_text: _('CLI Command'),
+                    text: command,
+                });
+                commandEntry.connect('changed', saveProviders);
+                row._commandEntry = commandEntry;
+                
+                const labelBox = new Gtk.Box({ spacing: 6 });
+                labelBox.append(new Gtk.Label({ label: _('CLI Command:'), xalign: 0 }));
+                
+                const resetBtn = new Gtk.Button({
+                    label: _('Reset Default'),
+                    valign: Gtk.Align.CENTER,
+                    css_classes: ['flat'],
+                });
+                resetBtn.connect('clicked', () => {
+                    commandEntry.set_text(info.defaultCommand);
+                    saveProviders();
+                });
+                labelBox.append(resetBtn);
+                
+                box.append(labelBox);
+                box.append(commandEntry);
+            }
 
-            const removeBtn = new Gtk.Button({
-                icon_name: 'user-trash-symbolic',
-                valign: Gtk.Align.CENTER,
-                css_classes: ['destructive-action'],
-            });
-            removeBtn.connect('clicked', () => {
-                listBox.remove(row);
-                saveProviders();
-            });
-
-            const rowContent = new Gtk.Box({
-                orientation: Gtk.Orientation.HORIZONTAL,
-                spacing: 12,
-            });
-            rowContent.append(box);
-            rowContent.append(removeBtn);
-
-            row.set_child(rowContent);
+            row.add_row(box);
+            this._providerRows.push(row);
             return row;
         };
 
-        providers.forEach(p => {
-            listBox.append(createProviderRow(p.name, p.command));
+        const processedIds = new Set();
+        const processedNames = new Set();
+
+        // 1. Predefined Providers
+        PREDEFINED_PROVIDERS.forEach(info => {
+            const infoNameLower = info.name.toLowerCase();
+            const activeData = activeProviders.find(p => p.id === info.id) || 
+                               activeProviders.find(p => p.name.toLowerCase() === infoNameLower);
+            
+            if (activeData) {
+                processedIds.add(activeData.id);
+                processedNames.add(activeData.name.toLowerCase());
+            }
+            group.add(createProviderRow(info, activeData));
         });
 
-        const addButton = new Gtk.Button({
-            label: _('Add Provider'),
-            icon_name: 'list-add-symbolic',
-            margin_top: 12,
+        // 2. Custom Providers
+        activeProviders.forEach(p => {
+            const pNameLower = p.name.toLowerCase();
+            if (!processedIds.has(p.id) && !processedNames.has(pNameLower)) {
+                group.add(createProviderRow({
+                    id: p.id,
+                    name: p.name,
+                    useApi: p.useApi || false,
+                    defaultCommand: p.command
+                }, p));
+            }
         });
-        addButton.connect('clicked', () => {
-            listBox.append(createProviderRow('', ''));
+
+        return group;
+    }
+
+    _buildMaintenanceGroup() {
+        const group = new Adw.PreferencesGroup({
+            title: _('Maintenance'),
         });
-        providersGroup.add(addButton);
+
+        const setupBtnRow = new Adw.ActionRow({
+            title: _('Show Welcome Screen'),
+            subtitle: _('Reset first-run state'),
+        });
+        const setupBtn = new Gtk.Button({
+            icon_name: 'help-about-symbolic',
+            valign: Gtk.Align.CENTER,
+        });
+        setupBtn.connect('clicked', () => {
+            this._settings.set_boolean('first-run', true);
+        });
+        setupBtnRow.add_suffix(setupBtn);
+        group.add(setupBtnRow);
+
+        return group;
+    }
+
+    async _importFromBrowser(providerId, tokenEntry) {
+        // Try to find the script in common installation paths
+        const homeDir = GLib.get_home_dir();
+        const extensionDir = GLib.build_filenamev([GLib.get_user_data_dir(), 'gnome-shell', 'extensions', 'codexbar@inled.es']);
+        const possiblePaths = [
+            GLib.build_filenamev([extensionDir, 'cookie_importer.py']),
+            GLib.build_filenamev([homeDir, '.local', 'share', 'gnome-shell', 'extensions', 'codexbar@inled.es', 'cookie_importer.py']),
+            '/home/jaime/Documentos/codexbar-gnome/cookie_importer.py'
+        ];
+        
+        let scriptPath = null;
+        for (const p of possiblePaths) {
+            if (GLib.file_test(p, GLib.FileTest.EXISTS)) {
+                scriptPath = p;
+                break;
+            }
+        }
+
+        if (!scriptPath) {
+            log(`CodexBar: Could not find cookie_importer.py in ${possiblePaths.join(', ')}`);
+            return;
+        }
+        
+        try {
+            log(`CodexBar: Running importer script at ${scriptPath}`);
+            
+            // [success, pid, stdin, stdout, stderr]
+            const [success, pid, stdin, stdout, stderr] = GLib.spawn_async_with_pipes(
+                null,
+                ['/usr/bin/python3', scriptPath],
+                null,
+                GLib.SpawnFlags.SEARCH_PATH,
+                null
+            );
+
+            if (!success) {
+                log('CodexBar: Failed to start importer process');
+                return;
+            }
+
+            // Close unused pipes
+            GLib.close(stdin);
+            GLib.close(stderr);
+
+            const stdoutStream = new Gio.UnixInputStream({ fd: stdout, close_fd: true });
+            const dataInputStream = new Gio.DataInputStream({ base_stream: stdoutStream });
+            
+            // Read the output (it's one big JSON line)
+            let [out, len] = dataInputStream.read_line(null);
+            if (out) {
+                const outStr = new TextDecoder().decode(out);
+                const result = JSON.parse(outStr);
+                
+                if (result.error === 'DEPENDENCIES_MISSING') {
+                    const installCmd = `pkexec apt install python3-secretstorage python3-cryptography -y`;
+                    GLib.spawn_command_line_async(installCmd);
+                } else if (result.error) {
+                    log(`CodexBar: Cookie import error: ${result.error}`);
+                } else if (result.cookie_header) {
+                    tokenEntry.set_text(result.cookie_header);
+                    storeToken(providerId, result.cookie_header);
+                    log('CodexBar: Successfully imported cookies');
+                }
+            }
+            
+            stdoutStream.close(null);
+            GLib.spawn_close_pid(pid);
+        } catch (e) {
+            log(`CodexBar: Error in _importFromBrowser: ${e.message}`);
+        }
+    }
+});
+
+export default class CodexBarPreferences extends ExtensionPreferences {
+    fillPreferencesWindow(window) {
+        const settings = this.getSettings();
+        window.add(new CodexBarPrefsPage(settings));
     }
 }

@@ -5,10 +5,13 @@ import Clutter from 'gi://Clutter';
 import { Extension, gettext as _ } from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import { UsageApiClient } from './usageApi.js';
+import { loadToken } from './secret.js';
 
 export default class CodexBarExtension extends Extension {
     enable() {
         this._settings = this.getSettings();
+        this._apiClient = new UsageApiClient();
         
         // Use a more descriptive name for the indicator
         this._indicator = new PanelMenu.Button(0.0, _('CodexBar'), false);
@@ -90,6 +93,11 @@ export default class CodexBarExtension extends Extension {
     }
 
     disable() {
+        if (this._apiClient) {
+            this._apiClient.destroy();
+            this._apiClient = null;
+        }
+
         // Cancel any pending subprocesses
         if (this._cancellable) {
             this._cancellable.cancel();
@@ -159,6 +167,29 @@ export default class CodexBarExtension extends Extension {
         for (let i = 0; i < this._providers.length; i++) {
             const provider = this._providers[i];
             
+            if (provider.useApi) {
+                try {
+                    const token = loadToken(provider.id);
+                    
+                    if (!token) {
+                        this._providersData[i] = { error: _('No token found in keyring') };
+                        continue;
+                    }
+                    const data = await this._apiClient.fetchSummary(token);
+                    this._providersData[i] = {
+                        data: data,
+                        labels: [_('5-Hour Window'), _('Weekly Window')],
+                    };
+                } catch (error) {
+                    logError(error, `CodexBar API error for ${provider.name}`);
+                    let msg = error.message;
+                    if (!msg && error.toString) msg = error.toString();
+                    if (!msg || msg === '[object Object]') msg = _('Unknown API error');
+                    this._providersData[i] = { error: msg };
+                }
+                continue;
+            }
+
             if (!provider.command) {
                 this._providersData[i] = { error: _('No command configured') };
                 continue;
@@ -260,7 +291,8 @@ export default class CodexBarExtension extends Extension {
                     } catch (jsonErr) {
                         this._providersData[i].error = _('JSON Error: %s').format(jsonErr.message);
                     }
-                } else if (trimmedStderr) {
+                }
+ else if (trimmedStderr) {
                     this._providersData[i].error = _('CLI Error: %s').format(trimmedStderr.split('\n')[0]);
                 } else if (trimmedStdout) {
                     this._providersData[i].error = _('Output is not valid JSON');
