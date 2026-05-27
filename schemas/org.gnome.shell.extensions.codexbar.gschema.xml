@@ -22,5 +22,9 @@
       <default>true</default>
       <summary>Whether this is the first time the extension is run</summary>
     </key>
+    <key name="show-logos" type="b">
+      <default>true</default>
+      <summary>Whether to show provider logos in the tabs</summary>
+    </key>
   </schema>
 </schemalist>

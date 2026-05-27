@@ -47,6 +47,13 @@
     font-weight: bold;
 }
 
+.codexbar-tab-icon {
+    margin-right: 6px;
+    icon-size: 16px;
+    color: white;
+    -st-icon-style: symbolic;
+}
+
 .codexbar-usage-section {
     padding: 15px;
 }

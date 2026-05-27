@@ -122,6 +122,9 @@ export default class CodexBarExtension extends Extension {
       this._settings.connect("changed::display-mode", () => this._updateUI()),
     );
     this._signals.push(
+      this._settings.connect("changed::show-logos", () => this._updateUI()),
+    );
+    this._signals.push(
       this._settings.connect("changed::first-run", () => this._updateUI()),
     );
 
@@ -496,12 +499,36 @@ export default class CodexBarExtension extends Extension {
 
     // Create tab buttons
     // Crear botones de pestaña
+    const showLogos = this._settings.get_boolean("show-logos");
+
     this._providers.forEach((provider, index) => {
       let btn = new St.Button({
-        label: provider.name || _("Unknown"),
         style_class: "codexbar-tab",
         can_focus: true,
       });
+
+      let btnBin = new St.BoxLayout({
+        vertical: false,
+        y_align: Clutter.ActorAlign.CENTER,
+      });
+      btn.set_child(btnBin);
+
+      if (showLogos) {
+        const logoIcon = this._getProviderLogo(
+          provider.id || provider.name.toLowerCase(),
+        );
+        if (logoIcon) {
+          btnBin.add_child(logoIcon);
+        }
+      }
+
+      btnBin.add_child(
+        new St.Label({
+          text: provider.name || _("Unknown"),
+          y_align: Clutter.ActorAlign.CENTER,
+        }),
+      );
+
       if (index === this._activeProviderIndex) {
         btn.add_style_class_name("codexbar-tab-active");
       }
@@ -713,6 +740,38 @@ export default class CodexBarExtension extends Extension {
         this._contentBox.add_child(sep);
       }
     });
+  }
+
+  /**
+   * Get provider logo as an St.Icon.
+   * Obtener el logo del proveedor como un St.Icon.
+   * @param {string} providerId
+   * @returns {St.Icon|null}
+   */
+  _getProviderLogo(providerId) {
+    if (!providerId) return null;
+
+    // Normalize ID: lowercase and replace spaces with dashes
+    const id = providerId.toLowerCase().replace(/\s+/g, "-");
+    const logoPath = GLib.build_filenamev([
+      this.path,
+      "media",
+      "logos",
+      `${id}-symbolic.svg`,
+    ]);
+
+    if (GLib.file_test(logoPath, GLib.FileTest.EXISTS)) {
+      const gicon = Gio.Icon.new_for_string(logoPath);
+      
+      let icon = new St.Icon({
+        gicon: gicon,
+        icon_size: 16,
+        style_class: "codexbar-tab-icon",
+      });
+      
+      return icon;
+    }
+    return null;
   }
 
   /**

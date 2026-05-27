@@ -177,6 +177,14 @@ class CodexBarPrefsPage extends Adw.PreferencesPage {
         });
         group.add(displayModeRow);
 
+        const showLogosRow = new Adw.SwitchRow({
+            title: _('Show Provider Logos'),
+            subtitle: _('Display the logo of each AI provider in the selection tabs'),
+            active: this._settings.get_boolean('show-logos'),
+        });
+        this._settings.bind('show-logos', showLogosRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+        group.add(showLogosRow);
+
         return group;
     }
 
