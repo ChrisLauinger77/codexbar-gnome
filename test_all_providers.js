@@ -1,0 +1,67 @@
+
+import { UsageApiClient } from './usageApi.js';
+
+const client = new UsageApiClient();
+
+const testCases = [
+    {
+        name: "OpenRouter (User reported)",
+        data: {
+            "loginMethod": "Balance: $35.05",
+            "openRouterUsage": {
+                "balance": 35.05187273999999,
+                "totalCredits": 160,
+                "totalUsage": 124.94812726,
+                "usedPercent": 78.0925795375
+            }
+        }
+    },
+    {
+        name: "OpenAI / Codex (Standard)",
+        data: {
+            "email": "user@example.com",
+            "usage": [
+                {
+                    "used": 10,
+                    "limit": 50,
+                    "window_seconds": 10800,
+                    "reset_after_seconds": 3600
+                }
+            ]
+        }
+    },
+    {
+        name: "OpenAI Free (used_percent)",
+        data: {
+            "used_percent": 45.5,
+            "limit_window_seconds": 3600
+        }
+    },
+    {
+        name: "Generic CLI (remaining/total)",
+        data: {
+            "remaining": 5,
+            "total": 20
+        }
+    }
+];
+
+console.log("--- Testing normalizeSummary for multiple formats ---\n");
+
+testCases.forEach(test => {
+    console.log(`Testing: ${test.name}`);
+    try {
+        const normalized = client.normalizeSummary(test.data);
+        const primary = normalized.usage.primary;
+        
+        if (primary) {
+            console.log(`  ✓ Success: ${primary.usedPercent.toFixed(2)}% used`);
+            if (primary.resetDescription) console.log(`  └─ Reset: ${primary.resetDescription}`);
+        } else {
+            console.log("  ✗ Failed: No primary window found");
+        }
+    } catch (e) {
+        console.log(`  ✗ Error: ${e.message}`);
+    }
+    console.log("");
+});

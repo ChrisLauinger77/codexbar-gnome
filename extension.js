@@ -397,9 +397,20 @@ export default class CodexBarExtension extends Extension {
         ) {
           try {
             const parsed = JSON.parse(trimmedStdout);
-            this._providersData[i].data = Array.isArray(parsed)
-              ? parsed[0]
-              : parsed;
+            let rawData = Array.isArray(parsed) ? parsed[0] : parsed;
+
+            if (rawData) {
+              // If it has a .usage property, normalize that.
+              // Otherwise, treat the whole object as usage data.
+              if (rawData.usage) {
+                const normalized = this._apiClient.normalizeSummary(rawData.usage);
+                rawData.usage = normalized.usage;
+              } else {
+                const normalized = this._apiClient.normalizeSummary(rawData);
+                rawData = { ...rawData, usage: normalized.usage };
+              }
+            }
+            this._providersData[i].data = rawData;
           } catch (jsonErr) {
             this._providersData[i].error = _("JSON Error: %s").format(
               jsonErr.message,

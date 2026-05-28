@@ -176,12 +176,13 @@ export class UsageApiClient {
 
         return {
             usage: {
-                accountEmail: payload?.email || 'API User',
-                updatedAt: new Date().toISOString(),
-                primary: mapWindow(sorted[0]),
-                secondary: mapWindow(sorted[1]),
-                tertiary: mapWindow(sorted[2]),
-                quaternary: mapWindow(sorted[3]),
+                ...payload,
+                accountEmail: payload?.accountEmail || payload?.email || 'API User',
+                updatedAt: payload?.updatedAt || new Date().toISOString(),
+                primary: mapWindow(sorted[0]) || payload?.primary || null,
+                secondary: mapWindow(sorted[1]) || payload?.secondary || null,
+                tertiary: mapWindow(sorted[2]) || payload?.tertiary || null,
+                quaternary: mapWindow(sorted[3]) || payload?.quaternary || null,
             }
         };
     }
@@ -198,11 +199,15 @@ export class UsageApiClient {
             if (!obj || typeof obj !== 'object' || seen.has(obj)) return;
             seen.add(obj);
             
-            // Support for used_percent directly (OpenAI Free plans)
-            // Soporte para used_percent directamente (planes gratuitos de OpenAI)
-            if (obj.used_percent !== undefined) {
-                const percent = parseFloat(obj.used_percent) / 100;
+            // Support for used_percent / usedPercent directly
+            // Soporte para used_percent / usedPercent directamente
+            const rawPercent = obj.used_percent ?? obj.usedPercent;
+            if (rawPercent !== undefined) {
+                let percent = parseFloat(rawPercent);
                 if (!isNaN(percent)) {
+                    // If > 1, assume it's 0-100 scale
+                    if (percent > 1.0) percent = percent / 100;
+
                     windows.push({
                         used: percent,
                         limit: 1,
@@ -215,8 +220,8 @@ export class UsageApiClient {
 
             // Look for usage/limit pairs
             // Buscar pares de uso/límite
-            let usedValue = obj.used ?? obj.usage ?? obj.count ?? obj.current_usage;
-            let limitValue = obj.limit ?? obj.cap ?? obj.max ?? obj.usage_limit ?? obj.total;
+            let usedValue = obj.used ?? obj.usage ?? obj.count ?? obj.current_usage ?? obj.totalUsage ?? obj.keyUsage;
+            let limitValue = obj.limit ?? obj.cap ?? obj.max ?? obj.usage_limit ?? obj.total ?? obj.totalCredits;
             
             // Handle 'remaining' + 'total' case
             // Manejar caso de 'restante' + 'total'
@@ -252,7 +257,8 @@ export class UsageApiClient {
         // Eliminar ventanas duplicadas
         return windows.filter((w, index, self) => 
             index === self.findIndex((t) => (
-                t.window_seconds === w.window_seconds && t.percent === w.percent
+                t.window_seconds === w.window_seconds && 
+                Math.abs(t.percent - w.percent) < 0.0001
             ))
         );
     }
