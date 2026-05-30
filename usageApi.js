@@ -162,15 +162,23 @@ export class UsageApiClient {
         const sorted = windows.sort((a, b) => (a.window_seconds || 0) - (b.window_seconds || 0));
         
         const formatReset = (seconds) => {
-            if (!seconds) return '';
-            if (seconds < 60) return `Resets in ${Math.round(seconds)}s`;
-            if (seconds < 3600) return `Resets in ${Math.round(seconds / 60)}m`;
-            return `Resets in ${Math.round(seconds / 3600)}h`;
+            if (!seconds || seconds <= 0) return '';
+            const resetDate = new Date(Date.now() + seconds * 1000);
+            const timeStr = resetDate.toLocaleTimeString([], { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            });
+            
+            if (seconds < 3600) {
+                return `Resets at ${timeStr} (in ${Math.round(seconds / 60)}m)`;
+            }
+            const hours = Math.round(seconds / 3600);
+            return `Resets at ${timeStr} (in ${hours}h)`;
         };
 
-        const mapWindow = (w) => w ? {
+        const mapWindow = (w, existing) => w ? {
             usedPercent: w.percent * 100,
-            resetDescription: formatReset(w.reset_after_seconds),
+            resetDescription: formatReset(w.reset_after_seconds) || existing?.resetDescription || '',
             windowSeconds: w.window_seconds
         } : null;
 
@@ -179,10 +187,10 @@ export class UsageApiClient {
                 ...payload,
                 accountEmail: payload?.accountEmail || payload?.email || 'API User',
                 updatedAt: payload?.updatedAt || new Date().toISOString(),
-                primary: mapWindow(sorted[0]) || payload?.primary || null,
-                secondary: mapWindow(sorted[1]) || payload?.secondary || null,
-                tertiary: mapWindow(sorted[2]) || payload?.tertiary || null,
-                quaternary: mapWindow(sorted[3]) || payload?.quaternary || null,
+                primary: mapWindow(sorted[0], payload?.primary) || payload?.primary || null,
+                secondary: mapWindow(sorted[1], payload?.secondary) || payload?.secondary || null,
+                tertiary: mapWindow(sorted[2], payload?.tertiary) || payload?.tertiary || null,
+                quaternary: mapWindow(sorted[3], payload?.quaternary) || payload?.quaternary || null,
             }
         };
     }
@@ -239,7 +247,7 @@ export class UsageApiClient {
                         limit: limit,
                         percent: used / limit,
                         window_seconds: obj.window_seconds || obj.duration_seconds || 0,
-                        reset_after_seconds: obj.reset_after_seconds || 0
+                        reset_after_seconds: obj.reset_after_seconds || obj.reset_after || 0
                     });
                 }
             }
