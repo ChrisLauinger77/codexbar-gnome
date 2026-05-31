@@ -27,6 +27,82 @@ export class UsageApiError extends Error {
  * Client for fetching and parsing usage data from OpenAI/ChatGPT.
  * Cliente para obtener y parsear datos de uso de OpenAI/ChatGPT.
  */
+const normalizePercentValue = (rawPercent, mode = 'used') => {
+    let percent = parseFloat(rawPercent);
+    if (isNaN(percent)) return null;
+    percent = percent / 100;
+    if (mode === 'remaining') percent = 1 - percent;
+    return Math.min(1, Math.max(0, percent));
+};
+
+const makeWindow = (obj) => {
+    if (!obj || typeof obj !== 'object') return null;
+
+    const rawUsedPercent = obj.used_percent ?? obj.usedPercent;
+    if (rawUsedPercent !== undefined) {
+        const percent = normalizePercentValue(rawUsedPercent, 'used');
+        if (percent !== null) {
+            return {
+                used: percent,
+                limit: 1,
+                percent,
+                window_seconds: obj.limit_window_seconds || obj.window_seconds || obj.duration_seconds || 0,
+                reset_after_seconds: obj.reset_after_seconds || obj.reset_after || 0
+            };
+        }
+    }
+
+    const rawRemainingPercent =
+        obj.remaining_percent ?? obj.remainingPercent ?? obj.percent_remaining ?? obj.percentRemaining;
+    if (rawRemainingPercent !== undefined) {
+        const percent = normalizePercentValue(rawRemainingPercent, 'remaining');
+        if (percent !== null) {
+            return {
+                used: percent,
+                limit: 1,
+                percent,
+                window_seconds: obj.limit_window_seconds || obj.window_seconds || obj.duration_seconds || 0,
+                reset_after_seconds: obj.reset_after_seconds || obj.reset_after || 0
+            };
+        }
+    }
+
+    let usedValue = obj.used ?? obj.usage ?? obj.count ?? obj.current_usage ?? obj.totalUsage ?? obj.keyUsage;
+    let limitValue = obj.limit ?? obj.cap ?? obj.max ?? obj.usage_limit ?? obj.total ?? obj.totalCredits;
+    
+    if (usedValue === undefined && obj.remaining !== undefined && limitValue !== undefined) {
+        usedValue = parseFloat(limitValue) - parseFloat(obj.remaining);
+    }
+
+    if (usedValue !== undefined && limitValue !== undefined) {
+        const used = parseFloat(usedValue);
+        const limit = parseFloat(limitValue);
+        
+        if (!isNaN(used) && !isNaN(limit) && limit > 0) {
+            return {
+                used,
+                limit,
+                percent: Math.min(1, Math.max(0, used / limit)),
+                window_seconds: obj.limit_window_seconds || obj.window_seconds || obj.duration_seconds || 0,
+                reset_after_seconds: obj.reset_after_seconds || obj.reset_after || 0
+            };
+        }
+    }
+
+    return null;
+};
+
+const addWindow = (target, win) => {
+    if (win) target.push(win);
+};
+
+const dedupe = (items) => items.filter((w, index, self) =>
+    index === self.findIndex((t) => (
+        t.window_seconds === w.window_seconds &&
+        Math.abs(t.percent - w.percent) < 0.0001
+    ))
+);
+
 export class UsageApiClient {
     constructor() {
         this._session = new Soup.Session({
@@ -171,34 +247,13 @@ export class UsageApiClient {
         };
 
         const mapSingle = (obj) => {
-            if (!obj || typeof obj !== 'object') return null;
-            
-            let usedPercent = obj.usedPercent;
-            let resetSecs = obj.reset_after_seconds ?? obj.reset_after ?? obj.reset_in_seconds ?? obj.reset_time;
-            
-            // Try to extract if usedPercent is missing
-            if (usedPercent === undefined) {
-                let used = obj.used ?? obj.usage ?? obj.count ?? obj.current_usage ?? obj.totalUsage ?? obj.keyUsage;
-                let limit = obj.limit ?? obj.cap ?? obj.max ?? obj.usage_limit ?? obj.total ?? obj.totalCredits;
-                
-                if (used === undefined && obj.remaining !== undefined && limit !== undefined) {
-                    used = parseFloat(limit) - parseFloat(obj.remaining);
-                }
-                
-                if (used !== undefined && limit !== undefined && limit > 0) {
-                    usedPercent = (parseFloat(used) / parseFloat(limit)) * 100;
-                } else if (obj.used_percent !== undefined || obj.usedPercent !== undefined) {
-                    usedPercent = parseFloat(obj.used_percent ?? obj.usedPercent);
-                    if (usedPercent <= 1.0) usedPercent *= 100;
-                }
-            }
-
-            if (usedPercent === undefined) return null;
+            const win = makeWindow(obj);
+            if (!win) return null;
 
             return {
-                usedPercent: usedPercent,
-                resetDescription: formatReset(resetSecs) || obj.resetDescription || '',
-                windowSeconds: obj.window_seconds || (obj.windowMinutes ? obj.windowMinutes * 60 : 0)
+                usedPercent: win.percent * 100,
+                resetDescription: formatReset(win.reset_after_seconds) || obj.resetDescription || '',
+                windowSeconds: win.window_seconds
             };
         };
 
@@ -249,75 +304,6 @@ export class UsageApiClient {
         const seen = new Set();
         const canonicalWindows = [];
 
-        const normalizePercentValue = (rawPercent, mode = 'used') => {
-            let percent = parseFloat(rawPercent);
-            if (isNaN(percent)) return null;
-            percent = percent / 100;
-            if (mode === 'remaining') percent = 1 - percent;
-            return Math.min(1, Math.max(0, percent));
-        };
-
-        const makeWindow = (obj) => {
-            if (!obj || typeof obj !== 'object') return null;
-
-            const rawUsedPercent = obj.used_percent ?? obj.usedPercent;
-            if (rawUsedPercent !== undefined) {
-                const percent = normalizePercentValue(rawUsedPercent, 'used');
-                if (percent !== null) {
-                    return {
-                        used: percent,
-                        limit: 1,
-                        percent,
-                        window_seconds: obj.limit_window_seconds || obj.window_seconds || obj.duration_seconds || 0,
-                        reset_after_seconds: obj.reset_after_seconds || obj.reset_after || 0
-                    };
-                }
-            }
-
-            const rawRemainingPercent =
-                obj.remaining_percent ?? obj.remainingPercent ?? obj.percent_remaining ?? obj.percentRemaining;
-            if (rawRemainingPercent !== undefined) {
-                const percent = normalizePercentValue(rawRemainingPercent, 'remaining');
-                if (percent !== null) {
-                    return {
-                        used: percent,
-                        limit: 1,
-                        percent,
-                        window_seconds: obj.limit_window_seconds || obj.window_seconds || obj.duration_seconds || 0,
-                        reset_after_seconds: obj.reset_after_seconds || obj.reset_after || 0
-                    };
-                }
-            }
-
-            let usedValue = obj.used ?? obj.usage ?? obj.count ?? obj.current_usage ?? obj.totalUsage ?? obj.keyUsage;
-            let limitValue = obj.limit ?? obj.cap ?? obj.max ?? obj.usage_limit ?? obj.total ?? obj.totalCredits;
-            
-            if (usedValue === undefined && obj.remaining !== undefined && limitValue !== undefined) {
-                usedValue = parseFloat(limitValue) - parseFloat(obj.remaining);
-            }
-
-            if (usedValue !== undefined && limitValue !== undefined) {
-                const used = parseFloat(usedValue);
-                const limit = parseFloat(limitValue);
-                
-                if (!isNaN(used) && !isNaN(limit) && limit > 0) {
-                    return {
-                        used,
-                        limit,
-                        percent: Math.min(1, Math.max(0, used / limit)),
-                        window_seconds: obj.limit_window_seconds || obj.window_seconds || obj.duration_seconds || 0,
-                        reset_after_seconds: obj.reset_after_seconds || obj.reset_after || 0
-                    };
-                }
-            }
-
-            return null;
-        };
-
-        const addWindow = (target, win) => {
-            if (win) target.push(win);
-        };
-
         const rateLimit = payload?.rate_limit || payload?.usage?.rate_limit;
         if (rateLimit) {
             [
@@ -334,13 +320,6 @@ export class UsageApiClient {
 
         ['primary', 'secondary', 'tertiary', 'quaternary'].forEach((key) =>
             addWindow(canonicalWindows, makeWindow(payload?.[key] || payload?.usage?.[key]))
-        );
-
-        const dedupe = (items) => items.filter((w, index, self) =>
-            index === self.findIndex((t) => (
-                t.window_seconds === w.window_seconds &&
-                Math.abs(t.percent - w.percent) < 0.0001
-            ))
         );
 
         if (canonicalWindows.length > 0) {
