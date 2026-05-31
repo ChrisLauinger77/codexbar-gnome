@@ -1,4 +1,5 @@
 import Gio from 'gi://Gio';
+import GioUnix from 'gi://GioUnix';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import Gtk from 'gi://Gtk';
@@ -294,8 +295,21 @@ class CodexBarPrefsPage extends Adw.PreferencesPage {
                     tooltip_text: _('Uses a local Python script to extract cookies from Chrome/Brave. Works only for Codex.')
                 });
                 
+                const spinner = new Gtk.Spinner({
+                    valign: Gtk.Align.CENTER,
+                    margin_start: 6,
+                });
+                const btnBox = new Gtk.Box({ spacing: 6, margin_top: 6 });
+                btnBox.append(importBtn);
+                btnBox.append(spinner);
+
                 importBtn.connect('clicked', () => {
-                    this._importFromBrowser(row._id, tokenEntry);
+                    importBtn.sensitive = false;
+                    spinner.start();
+                    this._importFromBrowser(row._id, tokenEntry, () => {
+                        importBtn.sensitive = true;
+                        spinner.stop();
+                    });
                 });
                 
                 box.append(new Gtk.Label({ 
@@ -304,7 +318,7 @@ class CodexBarPrefsPage extends Adw.PreferencesPage {
                     css_classes: ['caption'] 
                 }));
                 box.append(tokenEntry);
-                box.append(importBtn);
+                box.append(btnBox);
                 box.append(new Gtk.Label({ 
                     label: _('Manual entry: Paste your session cookies here.'), 
                     xalign: 0,
@@ -493,7 +507,15 @@ class CodexBarPrefsPage extends Adw.PreferencesPage {
      * Import cookies from browser using local Python script.
      * Importa cookies desde el navegador usando un script de Python local.
      */
-    async _importFromBrowser(providerId, tokenEntry) {
+    /**
+     * Import cookies from browser using local Python script.
+     * Importa cookies desde el navegador usando un script de Python local.
+     */
+    async _importFromBrowser(providerId, tokenEntry, callback = null) {
+        const finish = () => {
+            if (callback) callback();
+        };
+
         // Find the script path
         const homeDir = GLib.get_home_dir();
         const extensionDir = GLib.build_filenamev([GLib.get_user_data_dir(), 'gnome-shell', 'extensions', 'codexbar@inled.es']);
@@ -510,49 +532,97 @@ class CodexBarPrefsPage extends Adw.PreferencesPage {
             }
         }
 
+        const showError = (title, message) => {
+            const dialog = new Adw.MessageDialog({
+                heading: title,
+                body: message,
+                transient_for: this.get_root(),
+                modal: true,
+            });
+            dialog.add_response('ok', _('OK'));
+            dialog.present();
+            finish();
+        };
+
         if (!scriptPath) {
+            showError(_('Error'), _('Cookie importer script not found. Please reinstall the extension.'));
             return;
         }
         
         try {
-            // Spawn Python script to extract cookies
-            // Lanzar script de Python para extraer cookies
-            const [success, pid, stdin, stdout, stderr] = GLib.spawn_async_with_pipes(
-                null,
-                ['/usr/bin/python3', scriptPath],
-                null,
-                GLib.SpawnFlags.SEARCH_PATH,
-                null
-            );
+            const proc = new Gio.Subprocess({
+                argv: ['/usr/bin/python3', scriptPath],
+                flags: Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE,
+            });
+            proc.init(null);
 
-            if (!success) return;
+            const cancellable = new Gio.Cancellable();
+            let timedOut = false;
 
-            GLib.close(stdin);
-            GLib.close(stderr);
+            const timeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 15000, () => {
+                timedOut = true;
+                cancellable.cancel();
+                proc.force_exit();
+                showError(_('Timeout'), _('The cookie importer is taking too long. Please ensure your browser is closed and try again.'));
+                return GLib.SOURCE_REMOVE;
+            });
 
-            const stdoutStream = new Gio.UnixInputStream({ fd: stdout, close_fd: true });
-            const dataInputStream = new Gio.DataInputStream({ base_stream: stdoutStream });
-            
-            let [out, len] = dataInputStream.read_line(null);
-            if (out) {
-                const outStr = new TextDecoder().decode(out);
-                const result = JSON.parse(outStr);
-                
-                if (result.error === 'DEPENDENCIES_MISSING') {
-                    // Help user install missing dependencies
-                    // Ayudar al usuario a instalar dependencias faltantes
-                    const installCmd = `pkexec apt install python3-secretstorage python3-cryptography -y`;
-                    GLib.spawn_command_line_async(installCmd);
-                } else if (result.cookie_header) {
-                    tokenEntry.set_text(result.cookie_header);
-                    storeToken(providerId, result.cookie_header);
+            proc.communicate_utf8_async(null, cancellable, (p, res) => {
+                if (timeoutId > 0 && !timedOut) {
+                    GLib.source_remove(timeoutId);
                 }
-            }
-            
-            stdoutStream.close(null);
-            GLib.spawn_close_pid(pid);
+
+                try {
+                    const [success, stdout, stderr] = p.communicate_utf8_finish(res);
+                    
+                    if (timedOut) return;
+
+                    if (success && stdout) {
+                        const result = JSON.parse(stdout.trim());
+                        
+                        if (result.error === 'DEPENDENCIES_MISSING') {
+                            const dialog = new Adw.MessageDialog({
+                                heading: _('Dependencies Missing'),
+                                body: _('To import cookies, you need to install secretstorage and cryptography. Would you like to try installing them now?'),
+                                transient_for: this.get_root(),
+                                modal: true,
+                            });
+                            dialog.add_response('cancel', _('Cancel'));
+                            dialog.add_response('install', _('Install'));
+                            dialog.set_response_appearance('install', Adw.ResponseAppearance.SUGGESTED);
+
+                            dialog.connect('response', (d, response) => {
+                                if (response === 'install') {
+                                    const installCmd = `pkexec apt install python3-secretstorage python3-cryptography -y`;
+                                    GLib.spawn_command_line_async(installCmd);
+                                }
+                                finish();
+                            });
+                            dialog.present();
+                        } else if (result.error) {
+                            showError(_('Import Failed'), result.details || result.error);
+                        } else if (result.cookie_header) {
+                            tokenEntry.set_text(result.cookie_header);
+                            storeToken(providerId, result.cookie_header);
+                            
+                            const toast = new Adw.Toast({ title: _('Cookies imported successfully!') });
+                            this.get_root().add_toast(toast);
+                            finish();
+                        }
+                    } else {
+                        const err = stderr || _('The script returned no data.');
+                        showError(_('Error'), err);
+                    }
+                } catch (e) {
+                    if (!timedOut) {
+                        logError(e, 'CodexBar: Error reading script output');
+                        showError(_('Unexpected Error'), e.message);
+                    }
+                }
+            });
         } catch (e) {
             logError(e, 'CodexBar: Error in _importFromBrowser');
+            showError(_('Unexpected Error'), e.message);
         }
     }
 });

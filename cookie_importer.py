@@ -18,6 +18,7 @@ except ImportError:
 def get_keys(label_hints):
     keys = []
     seen = set()
+    dbus_error = None
     try:
         bus = secretstorage.dbus_init()
         collection = secretstorage.get_default_collection(bus)
@@ -28,11 +29,12 @@ def get_keys(label_hints):
                 if secret not in seen:
                     keys.append(secret)
                     seen.add(secret)
-    except:
-        pass
+    except Exception as e:
+        dbus_error = str(e)
+    
     if b"peanuts" not in seen:
         keys.append(b"peanuts")
-    return keys
+    return keys, dbus_error
 
 def decrypt_v10(encrypted_value, key):
     if not encrypted_value or len(encrypted_value) < 3:
@@ -120,15 +122,27 @@ def extract_tokens():
     targets = ["session-token", "oai-did", "oai-sc", "cf_clearance", "_cf_bm", "oai-is", "oai-allow", "oai-chat-web-route", "oai-client-auth-info"]
     
     all_cookies = {}
+    dbus_errors = []
     
     for browser in browsers:
-        keys = get_keys(browser["key_labels"])
+        keys, dbus_err = get_keys(browser["key_labels"])
+        if dbus_err:
+            dbus_errors.append(f"{browser['name']}: {dbus_err}")
+            
         search_path = os.path.expanduser(browser["path"])
         cookie_files = glob.glob(search_path)
         
+        if not cookie_files:
+            continue
+
         for db_path in cookie_files:
+            temp_db = None
             try:
                 temp_db = f"/tmp/codexbar_cookies_{os.getpid()}.db"
+                # Check if we can read the source file
+                if not os.access(db_path, os.R_OK):
+                    return {"error": "PERMISSION_DENIED", "details": f"Cannot read cookie file at {db_path}. Try closing your browser."}
+
                 shutil.copyfile(db_path, temp_db)
                 conn = sqlite3.connect(f"file:{temp_db}?mode=ro", uri=True)
                 cursor = conn.cursor()
@@ -152,13 +166,17 @@ def extract_tokens():
                         all_cookies[name] = cookie_value
                 
                 conn.close()
-                if os.path.exists(temp_db): os.remove(temp_db)
-            except:
-                if os.path.exists(temp_db): os.remove(temp_db)
-                continue
+            except Exception as e:
+                return {"error": "DATABASE_ERROR", "details": str(e)}
+            finally:
+                if temp_db and os.path.exists(temp_db): 
+                    os.remove(temp_db)
 
     if not all_cookies:
-        return {"error": "SESSION_NOT_FOUND", "details": "Found no valid session tokens. Please ensure you are logged in."}
+        details = "Found no valid session tokens. Please ensure you are logged in."
+        if dbus_errors:
+            details += "\n\nKeyring access errors (D-Bus):\n" + "\n".join(dbus_errors)
+        return {"error": "SESSION_NOT_FOUND", "details": details}
 
     found_session = any("session-token" in name for name in all_cookies)
     if not found_session:
