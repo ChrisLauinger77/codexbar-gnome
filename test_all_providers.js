@@ -73,6 +73,76 @@ const testCases = [
             "total": 20
         },
         expectedUsedPercent: 75
+    },
+    {
+        name: "Antigravity (User reported)",
+        data: {
+            "provider": "antigravity",
+            "source": "cli",
+            "usage": {
+                "primary": {
+                    "usedPercent": 0.42785999999999547,
+                    "windowMinutes": 300,
+                    "resetsAt": "2026-06-19T12:39:05Z",
+                    "resetDescription": "You have used some of your 5-hour limit, it will fully refresh in 4 hours, 59 minutes."
+                },
+                "identity": {
+                    "accountEmail": "user@example.com",
+                    "loginMethod": "Google AI Pro",
+                    "providerID": "antigravity"
+                },
+                "extraRateWindows": [
+                    {
+                        "title": "Gemini Session",
+                        "id": "antigravity-quota-summary-gemini-5h",
+                        "window": {
+                            "resetsAt": "2026-06-19T12:39:05Z",
+                            "windowMinutes": 300,
+                            "usedPercent": 0.42785999999999547,
+                            "resetDescription": "You have used some of your 5-hour limit, it will fully refresh in 4 hours, 59 minutes."
+                        }
+                    },
+                    {
+                        "title": "Gemini Weekly",
+                        "id": "antigravity-quota-summary-gemini-weekly",
+                        "window": {
+                            "resetsAt": "2026-06-26T07:39:05Z",
+                            "windowMinutes": 10080,
+                            "usedPercent": 0.07130499999999529,
+                            "resetDescription": "You have used some of your weekly limit, it will fully refresh in 6 days, 23 hours."
+                        }
+                    },
+                    {
+                        "title": "Claude + GPT Session",
+                        "id": "antigravity-quota-summary-3p-5h",
+                        "window": {
+                            "usedPercent": 0,
+                            "resetsAt": "2026-06-19T12:39:33Z",
+                            "windowMinutes": 300
+                        }
+                    },
+                    {
+                        "title": "Claude + GPT Weekly",
+                        "id": "antigravity-quota-summary-3p-weekly",
+                        "window": {
+                            "resetsAt": "2026-06-26T07:39:33Z",
+                            "windowMinutes": 10080,
+                            "usedPercent": 0
+                        }
+                    }
+                ],
+                "accountEmail": "user@example.com",
+                "updatedAt": "2026-06-19T07:39:33Z",
+                "tertiary": null,
+                "secondary": {
+                    "usedPercent": 0,
+                    "windowMinutes": 300,
+                    "resetsAt": "2026-06-19T12:39:33Z"
+                },
+                "loginMethod": "Google AI Pro"
+            }
+        },
+        expectedUsedPercent: 0.42786
     }
 ];
 
@@ -81,7 +151,9 @@ console.log("--- Testing normalizeSummary for multiple formats ---\n");
 testCases.forEach(test => {
     console.log(`Testing: ${test.name}`);
     try {
-        const normalized = client.normalizeSummary(test.data);
+        const payload = test.data.usage || test.data;
+        const isAntigravity = test.name.includes("Antigravity") || test.data.provider === "antigravity";
+        const normalized = client.normalizeSummary(payload, isAntigravity);
         const primary = normalized.usage.primary;
         
         if (primary) {

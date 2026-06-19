@@ -400,14 +400,26 @@ export default class CodexBarExtension extends Extension {
             let rawData = Array.isArray(parsed) ? parsed[0] : parsed;
 
             if (rawData) {
-              // If it has a .usage property, normalize that.
-              // Otherwise, treat the whole object as usage data.
+              // Check if the provider is antigravity
+              // Comprobar si el proveedor es antigravity
+              const isAntigravity = provider.id === "antigravity" || rawData.provider === "antigravity";
+              
               if (rawData.usage) {
-                const normalized = this._apiClient.normalizeSummary(rawData.usage);
+                // Normalize the nested usage data
+                // Normalizar los datos de uso anidados
+                const normalized = this._apiClient.normalizeSummary(rawData.usage, isAntigravity);
                 rawData.usage = normalized.usage;
+                if (normalized.labels && normalized.labels.length > 0) {
+                  this._providersData[i].labels = normalized.labels;
+                }
               } else {
-                const normalized = this._apiClient.normalizeSummary(rawData);
+                // Treat the root object as usage data
+                // Tratar el objeto raíz como datos de uso
+                const normalized = this._apiClient.normalizeSummary(rawData, isAntigravity);
                 rawData = { ...rawData, usage: normalized.usage };
+                if (normalized.labels && normalized.labels.length > 0) {
+                  this._providersData[i].labels = normalized.labels;
+                }
               }
             }
             this._providersData[i].data = rawData;

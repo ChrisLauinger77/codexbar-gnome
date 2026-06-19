@@ -38,6 +38,16 @@ const normalizePercentValue = (rawPercent, mode = 'used') => {
 const makeWindow = (obj) => {
     if (!obj || typeof obj !== 'object') return null;
 
+    let window_seconds = obj.limit_window_seconds || obj.window_seconds || obj.duration_seconds || 0;
+    if (!window_seconds && obj.windowMinutes) {
+        window_seconds = obj.windowMinutes * 60;
+    }
+    let reset_after_seconds = obj.reset_after_seconds || obj.reset_after || 0;
+    if (!reset_after_seconds && obj.resetsAt) {
+        const diffMs = new Date(obj.resetsAt).getTime() - Date.now();
+        reset_after_seconds = Math.max(0, Math.round(diffMs / 1000));
+    }
+
     const rawUsedPercent = obj.used_percent ?? obj.usedPercent;
     if (rawUsedPercent !== undefined) {
         const percent = normalizePercentValue(rawUsedPercent, 'used');
@@ -46,8 +56,8 @@ const makeWindow = (obj) => {
                 used: percent,
                 limit: 1,
                 percent,
-                window_seconds: obj.limit_window_seconds || obj.window_seconds || obj.duration_seconds || 0,
-                reset_after_seconds: obj.reset_after_seconds || obj.reset_after || 0
+                window_seconds,
+                reset_after_seconds
             };
         }
     }
@@ -61,8 +71,8 @@ const makeWindow = (obj) => {
                 used: percent,
                 limit: 1,
                 percent,
-                window_seconds: obj.limit_window_seconds || obj.window_seconds || obj.duration_seconds || 0,
-                reset_after_seconds: obj.reset_after_seconds || obj.reset_after || 0
+                window_seconds,
+                reset_after_seconds
             };
         }
     }
@@ -83,8 +93,8 @@ const makeWindow = (obj) => {
                 used,
                 limit,
                 percent: Math.min(1, Math.max(0, used / limit)),
-                window_seconds: obj.limit_window_seconds || obj.window_seconds || obj.duration_seconds || 0,
-                reset_after_seconds: obj.reset_after_seconds || obj.reset_after || 0
+                window_seconds,
+                reset_after_seconds
             };
         }
     }
@@ -258,7 +268,16 @@ export class UsageApiClient {
      * Normalize the API payload into a unified structure.
      * Normaliza el payload de la API en una estructura unificada.
      */
-    normalizeSummary(payload) {
+    normalizeSummary(payload, isAntigravity = false) {
+        // Detect if the provider is antigravity
+        // Detectar si el proveedor es antigravity
+        const isAnti = isAntigravity || 
+            payload?.identity?.providerID === "antigravity" || 
+            payload?.provider === "antigravity" ||
+            payload?.usage?.identity?.providerID === "antigravity" ||
+            (payload?.extraRateWindows && Array.isArray(payload.extraRateWindows)) ||
+            (payload?.usage?.extraRateWindows && Array.isArray(payload.usage.extraRateWindows));
+
         const mapSingle = (obj) => {
             const win = makeWindow(obj);
             if (!win) return null;
@@ -268,10 +287,43 @@ export class UsageApiClient {
                 resetDescription: formatResetDescription(
                     win.reset_after_seconds,
                     win.window_seconds
-                ) || obj.resetDescription || '',
+                ) || obj?.resetDescription || '',
                 windowSeconds: win.window_seconds
             };
         };
+
+        const extraWindows = payload?.extraRateWindows || payload?.usage?.extraRateWindows;
+        if (isAnti && extraWindows && Array.isArray(extraWindows)) {
+            // Handle multiple quota windows specific to Antigravity
+            // Manejar múltiples ventanas de cuota específicas de Antigravity
+            const labels = [];
+            const mappedTiers = {
+                primary: null,
+                secondary: null,
+                tertiary: null,
+                quaternary: null
+            };
+
+            const tierKeys = ["primary", "secondary", "tertiary", "quaternary"];
+            extraWindows.forEach((item, idx) => {
+                if (idx < 4) {
+                    const tierName = tierKeys[idx];
+                    mappedTiers[tierName] = mapSingle(item.window);
+                    labels.push(item.title || "Usage Window");
+                }
+            });
+
+            return {
+                labels,
+                usage: {
+                    ...payload,
+                    accountEmail: payload?.accountEmail || payload?.email || payload?.identity?.accountEmail || 'Antigravity User',
+                    loginMethod: payload?.loginMethod || payload?.identity?.loginMethod || '',
+                    updatedAt: payload?.updatedAt || new Date().toISOString(),
+                    ...mappedTiers
+                }
+            };
+        }
 
         // If it already has structured tiers, normalize them in place to keep order
         if (payload.primary || payload.secondary || payload.tertiary) {
@@ -294,10 +346,10 @@ export class UsageApiClient {
         
         const mapWindow = (w, existing) => w ? {
             usedPercent: w.percent * 100,
-            resetDescription: formatResetDescription(
+            resetDescription: existing?.resetDescription || formatResetDescription(
                 w.reset_after_seconds,
                 w.window_seconds
-            ) || existing?.resetDescription || '',
+            ) || '',
             windowSeconds: w.window_seconds
         } : null;
 
