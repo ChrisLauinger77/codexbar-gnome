@@ -165,21 +165,39 @@ export default class CodexBarExtension extends Extension {
       this._settings = null;
     }
 
-    // Step 5: Destroy the indicator and all UI elements
-    // Paso 5: Destruir el indicador y todos los elementos de la interfaz
+    // Step 5: Destroy all UI elements and the indicator
+    // Paso 5: Destruir todos los elementos de la interfaz y el indicador
+    if (this._iconFill) {
+      this._iconFill.destroy();
+      this._iconFill = null;
+    }
+    if (this._iconBox) {
+      this._iconBox.destroy();
+      this._iconBox = null;
+    }
+    if (this._headerTitle) {
+      this._headerTitle.destroy();
+      this._headerTitle = null;
+    }
+    if (this._headerBox) {
+      this._headerBox.destroy();
+      this._headerBox = null;
+    }
+    if (this._tabsContainer) {
+      this._tabsContainer.destroy();
+      this._tabsContainer = null;
+    }
+    if (this._contentBox) {
+      this._contentBox.destroy();
+      this._contentBox = null;
+    }
     if (this._indicator) {
       this._indicator.destroy();
       this._indicator = null;
     }
 
-    // Step 6: Nullify references to prevent memory leaks
-    // Paso 6: Anular referencias para prevenir fugas de memoria
-    this._iconFill = null;
-    this._iconBox = null;
-    this._headerTitle = null;
-    this._tabsContainer = null;
-    this._contentBox = null;
-    this._headerBox = null;
+    // Step 6: Nullify remaining references to prevent memory leaks
+    // Paso 6: Anular referencias restantes para prevenir fugas de memoria
     this._providersData = [];
   }
 
