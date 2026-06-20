@@ -15,26 +15,97 @@ try:
 except ImportError:
     HAS_DEPS = False
 
-def get_keys(label_hints):
+CHROMIUM_SECRET_SCHEMA = "chrome_libsecret_os_crypt_password_v2"
+
+def get_keys(label_hints, app_names=None):
     keys = []
     seen = set()
-    dbus_error = None
+    errors = []
+    app_names = {name.lower() for name in (app_names or [])}
+
+    def add_secret(secret):
+        if secret not in seen:
+            keys.append(secret)
+            seen.add(secret)
+
+    def item_priority(item):
+        try:
+            attrs = item.get_attributes()
+        except Exception:
+            attrs = {}
+        app = attrs.get("application", "").lower()
+        schema = attrs.get("xdg:schema", "")
+        if app in app_names and schema == CHROMIUM_SECRET_SCHEMA:
+            return 0
+
+        label = item.get_label().lower()
+        if any(hint.lower() in label for hint in label_hints):
+            # Chromium creates "Safe Storage Control" dummy entries to test
+            # keyring unlock behavior. They are not cookie encryption keys.
+            if "control" in label:
+                return None
+            return 1
+
+        return None
+
+    def scan_collection(collection):
+        try:
+            if collection.is_locked():
+                collection.unlock()
+        except Exception as e:
+            errors.append(f"unlock failed: {e}")
+
+        matched = []
+        try:
+            items = collection.get_all_items()
+        except Exception as e:
+            errors.append(f"items failed: {e}")
+            return
+
+        for item in items:
+            try:
+                priority = item_priority(item)
+                if priority is not None:
+                    matched.append((priority, item))
+            except Exception as e:
+                errors.append(f"item read failed: {e}")
+
+        for _priority, item in sorted(matched, key=lambda pair: pair[0]):
+            try:
+                add_secret(item.get_secret())
+            except Exception as e:
+                errors.append(f"secret read failed: {e}")
+
     try:
         bus = secretstorage.dbus_init()
-        collection = secretstorage.get_default_collection(bus)
-        for item in collection.get_all_items():
-            label = item.get_label().lower()
-            if any(hint.lower() in label for hint in label_hints):
-                secret = item.get_secret()
-                if secret not in seen:
-                    keys.append(secret)
-                    seen.add(secret)
+        for app_name in app_names:
+            try:
+                for item in secretstorage.search_items(bus, {
+                    "application": app_name,
+                    "xdg:schema": CHROMIUM_SECRET_SCHEMA,
+                }):
+                    add_secret(item.get_secret())
+            except Exception as e:
+                errors.append(f"search {app_name}: {e}")
+
+        try:
+            scan_collection(secretstorage.get_default_collection(bus))
+        except Exception as e:
+            errors.append(f"default collection: {e}")
+
+        if not keys:
+            try:
+                for collection in secretstorage.get_all_collections(bus):
+                    scan_collection(collection)
+            except Exception as e:
+                errors.append(f"all collections: {e}")
     except Exception as e:
-        dbus_error = str(e)
+        errors.append(str(e))
     
+    found_keyring_keys = bool(keys)
     if b"peanuts" not in seen:
         keys.append(b"peanuts")
-    return keys, dbus_error
+    return keys, None if found_keyring_keys else ("; ".join(dict.fromkeys(errors)) or None)
 
 def decrypt_v10(encrypted_value, key):
     if not encrypted_value or len(encrypted_value) < 3:
@@ -109,12 +180,23 @@ def extract_tokens():
         return {"error": "DEPENDENCIES_MISSING"}
 
     browsers = [
-        {"name": "Chrome", "path": "~/.config/google-chrome/*/Cookies", "key_labels": ["Chrome Safe Storage"]},
-        {"name": "Brave", "path": "~/.config/BraveSoftware/Brave-Browser/*/Cookies", "key_labels": ["Brave Safe Storage"]},
+        {
+            "name": "Chrome",
+            "path": "~/.config/google-chrome/*/Cookies",
+            "key_labels": ["Chrome Safe Storage"],
+            "app_names": ["chrome"],
+        },
+        {
+            "name": "Brave",
+            "path": "~/.config/BraveSoftware/Brave-Browser/*/Cookies",
+            "key_labels": ["Brave Safe Storage"],
+            "app_names": ["brave"],
+        },
         {
             "name": "Chromium",
             "path": "~/.config/chromium/*/Cookies",
             "key_labels": ["Chromium Safe Storage", "Application key for org.chromium.Chromium"],
+            "app_names": ["chromium"],
         },
     ]
 
@@ -123,9 +205,10 @@ def extract_tokens():
     
     all_cookies = {}
     dbus_errors = []
+    encrypted_targets = 0
     
     for browser in browsers:
-        keys, dbus_err = get_keys(browser["key_labels"])
+        keys, dbus_err = get_keys(browser["key_labels"], browser.get("app_names"))
         if dbus_err:
             dbus_errors.append(f"{browser['name']}: {dbus_err}")
             
@@ -153,6 +236,9 @@ def extract_tokens():
                     if not any(t in name for t in targets):
                         continue
 
+                    if enc_val:
+                        encrypted_targets += 1
+
                     cookie_value = value if is_plausible_cookie_value(name, value) else None
 
                     if cookie_value is None:
@@ -174,6 +260,11 @@ def extract_tokens():
 
     if not all_cookies:
         details = "Found no valid session tokens. Please ensure you are logged in."
+        if encrypted_targets:
+            details += (
+                f"\n\nFound {encrypted_targets} encrypted ChatGPT/OpenAI cookies, "
+                "but none could be decrypted with the available browser keyring keys."
+            )
         if dbus_errors:
             details += "\n\nKeyring access errors (D-Bus):\n" + "\n".join(dbus_errors)
         return {"error": "SESSION_NOT_FOUND", "details": details}
