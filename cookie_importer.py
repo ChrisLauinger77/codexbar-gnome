@@ -5,7 +5,7 @@ import shutil
 import glob
 import re
 
-# Dependencies
+# Dependencies / Dependencias
 try:
     import secretstorage
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -42,6 +42,8 @@ def get_keys(label_hints, app_names=None):
         if any(hint.lower() in label for hint in label_hints):
             # Chromium creates "Safe Storage Control" dummy entries to test
             # keyring unlock behavior. They are not cookie encryption keys.
+            # / Chromium crea entradas ficticias "Safe Storage Control" para probar
+            # el desbloqueo del keyring. No son claves de cifrado de cookies.
             if "control" in label:
                 return None
             return 1
@@ -126,6 +128,8 @@ def decrypt_v10(encrypted_value, key):
         
         # Chromium Linux v10/v11 values use PKCS#7 padding with AES-CBC.
         # If padding is invalid, the key is almost certainly wrong.
+        # / Los valores de Chromium en Linux v10/v11 usan padding PKCS#7 con AES-CBC.
+        # Si el padding no es válido, la clave es casi seguro incorrecta.
         padding_len = decrypted[-1]
         if padding_len < 1 or padding_len > 16:
             return None
@@ -133,18 +137,18 @@ def decrypt_v10(encrypted_value, key):
             return None
         decrypted_unpadded = decrypted[:-padding_len]
 
-        # Handle v11 / v10 header/garbage
-        # Try to find JWT start
+        # Handle v11 / v10 header/garbage / Manejar cabecera/basura de v11 / v10
+        # Try to find JWT start / Intentar encontrar el inicio del JWT
         jwt_start = decrypted_unpadded.find(b'eyJ')
         if jwt_start != -1 and jwt_start < 48:
             res = decrypted_unpadded[jwt_start:]
         else:
-            # Try common header offsets for v11
+            # Try common header offsets for v11 / Intentar offsets de cabecera comunes para v11
             found_clean = False
             for offset in [32, 28, 0]:
                 if len(decrypted_unpadded) > offset:
                     candidate = decrypted_unpadded[offset:]
-                    # Check if the first 10 chars are printable (ASCII)
+                    # Check if the first 10 chars are printable (ASCII) / Comprobar si los primeros 10 caracteres son imprimibles (ASCII)
                     if len(candidate) >= 10 and all(32 <= c <= 126 for c in candidate[:10]):
                         res = candidate
                         found_clean = True
@@ -152,7 +156,7 @@ def decrypt_v10(encrypted_value, key):
             if not found_clean:
                 res = decrypted_unpadded
 
-        # Final cleanup: decode and handle padding/garbage
+        # Final cleanup: decode and handle padding/garbage / Limpieza final: decodificar y manejar padding/basura
         res_str = res.decode('utf-8')
         if not is_plausible_cookie_value("", res_str):
             return None
@@ -167,6 +171,8 @@ def is_plausible_cookie_value(name, value):
 
     # RFC6265 cookie-octet, excluding DQUOTE, comma, semicolon, backslash,
     # whitespace, and control characters. Wrong decryption often produces these.
+    # / Octeto de cookie RFC6265, excluyendo DQUOTE, coma, punto y coma, barra invertida,
+    # espacios en blanco y caracteres de control. La descodificación errónea suele producirlos.
     if not re.fullmatch(r"[\x21\x23-\x2b\x2d-\x3a\x3c-\x5b\x5d-\x7e]+", value):
         return False
 
@@ -200,7 +206,7 @@ def extract_tokens():
         },
     ]
 
-    # Target cookies (broaden to ensure session validity)
+    # Target cookies (broaden to ensure session validity) / Cookies de destino (ampliar para asegurar la validez de la sesión)
     targets = ["session-token", "oai-did", "oai-sc", "cf_clearance", "_cf_bm", "oai-is", "oai-allow", "oai-chat-web-route", "oai-client-auth-info"]
     
     all_cookies = {}
@@ -222,7 +228,7 @@ def extract_tokens():
             temp_db = None
             try:
                 temp_db = f"/tmp/codexbar_cookies_{os.getpid()}.db"
-                # Check if we can read the source file
+                # Check if we can read the source file / Comprobar si podemos leer el archivo de origen
                 if not os.access(db_path, os.R_OK):
                     return {"error": "PERMISSION_DENIED", "details": f"Cannot read cookie file at {db_path}. Try closing your browser."}
 
@@ -273,8 +279,8 @@ def extract_tokens():
     if not found_session:
          return {"error": "SESSION_NOT_FOUND", "details": "Found some cookies but no session token. Please log in."}
 
-    # Format the cookie header
-    # Priority: session-token, then others
+    # Format the cookie header / Dar formato a la cabecera de la cookie
+    # Priority: session-token, then others / Prioridad: session-token, luego otros
     session_parts = [f"{name}={val}" for name, val in sorted(all_cookies.items()) if "session-token" in name]
     other_parts = [f"{name}={val}" for name, val in sorted(all_cookies.items()) if "session-token" not in name]
     
@@ -283,6 +289,8 @@ def extract_tokens():
     # GNOME/Gtk/D-Bus limits: If the string is too long, it might fail to pass through some channels.
     # 4KB is a safe bet for many systems, though D-Bus allows much more.
     # Let's see if we can fit it.
+    # / Límites de GNOME/Gtk/D-Bus: si la cadena es demasiado larga, podría fallar al pasar por algunos canales.
+    # 4KB es una apuesta segura para muchos sistemas, aunque D-Bus permite mucho más. Veámos si cabe.
     header = "; ".join(cookie_parts)
     if len(header) > 8192:
         # If still too long, we might need to be more aggressive, but session-token is vital.
