@@ -29,7 +29,16 @@ It is recommended to install the CLI via Homebrew:
 brew install steipete/tap/codexbar
 ```
 
-Ensure you have configured your providers and API keys in the CLI before using the extension.
+Ensure you have configured your providers and API keys in the CLI before using the extension.  
+
+### Install Cookie Importer (only for Codex users)
+It is now distributed separately from the extension.  
+```bash
+pip install codexbar-cookie-importer
+```
+
+
+
 
 ## Installation
 
