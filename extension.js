@@ -22,7 +22,7 @@ export default class CodexBarExtension extends Extension {
    */
   enable() {
     this._settings = this.getSettings();
-    this._apiClient = new UsageApiClient();
+    this._apiClient = new UsageApiClient(this.path);
 
     // Main indicator button in the panel
     // Botón indicador principal en el panel
@@ -216,7 +216,7 @@ export default class CodexBarExtension extends Extension {
       this._providers = JSON.parse(providersJson);
     } catch (e) {
       this._providers = [];
-      logError(e, "CodexBar: Failed to parse providers");
+      console.error(e, "CodexBar: Failed to parse providers");
     }
 
     if (this._activeProviderIndex >= this._providers.length) {
@@ -264,21 +264,15 @@ export default class CodexBarExtension extends Extension {
     for (let i = 0; i < this._providers.length; i++) {
       const provider = this._providers[i];
 
-      // Case 1: Provider uses Direct API or is Antigravity (using pure GJS client)
-      // Caso 1: El proveedor usa la API directa o es Antigravity (usando cliente GJS puro)
-      if (provider.useApi || provider.id === 'antigravity') {
+      if (provider.useApi) {
         try {
           let data;
-          if (provider.id === 'antigravity') {
-            data = await this._apiClient.fetchAntigravitySummary(this._cancellable);
-          } else {
-            const token = loadToken(provider.id);
-            if (!token) {
-              this._providersData[i] = { error: _("No token found in keyring") };
-              continue;
-            }
-            data = await this._apiClient.fetchSummary(token, this._cancellable);
+          const token = loadToken(provider.id);
+          if (!token) {
+            this._providersData[i] = { error: _("No token found in keyring") };
+            continue;
           }
+          data = await this._apiClient.fetchSummary(token, this._cancellable);
 
           // Generate dynamic labels based on window durations
           // Generar etiquetas dinámicas basadas en las duraciones de las ventanas
@@ -311,7 +305,7 @@ export default class CodexBarExtension extends Extension {
             labels: apiLabels,
           };
         } catch (error) {
-          logError(error, `CodexBar: API error for ${provider.name}`);
+          console.error(error, `CodexBar: API error for ${provider.name}`);
           let msg = error.message;
           if (!msg && error.toString) msg = error.toString();
           if (!msg || msg === "[object Object]") msg = _("Unknown API error");
@@ -359,7 +353,7 @@ export default class CodexBarExtension extends Extension {
         };
       } catch (error) {
         if (this._cancellable && !this._cancellable.is_cancelled()) {
-          logError(error, `CodexBar: error running provider ${provider.name}`);
+          console.error(error, `CodexBar: error running provider ${provider.name}`);
           let msg = error.message;
           if (!msg && error.toString) msg = error.toString();
           if (!msg || msg === "[object Object]") msg = _("Unknown CLI error");
@@ -732,6 +726,42 @@ export default class CodexBarExtension extends Extension {
   }
 
   /**
+   * Helper to create a command box with a Copy button.
+   * Crea un contenedor con el comando y un botón para copiar al portapapeles.
+   */
+  _createCommandWithCopyButton(commandText) {
+    let box = new St.BoxLayout({
+      vertical: false,
+      x_expand: true,
+      style: "background-color: rgba(0,0,0,0.3); padding: 4px 8px; border-radius: 4px; margin-top: 4px; spacing: 8px;",
+    });
+
+    let cmdLabel = new St.Label({
+      text: commandText,
+      style: "font-family: monospace; font-size: 0.8em; color: #3584e4; y-align: middle;",
+      x_expand: true,
+    });
+    box.add_child(cmdLabel);
+
+    let copyBtn = new St.Button({
+      style: "padding: 2px 6px; background-color: rgba(255,255,255,0.1); border-radius: 3px; font-size: 0.8em; color: #ffffff;",
+      label: _("Copy"),
+    });
+    copyBtn.connect("clicked", () => {
+      const clipboard = St.Clipboard.get_default();
+      clipboard.set_text(St.ClipboardType.CLIPBOARD, commandText);
+      copyBtn.label = _("Copied!");
+      GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1500, () => {
+        copyBtn.label = _("Copy");
+        return GLib.SOURCE_REMOVE;
+      });
+    });
+    box.add_child(copyBtn);
+
+    return box;
+  }
+
+  /**
    * Show welcome screen for first-run or missing dependencies.
    * Muestra la pantalla de bienvenida para la primera ejecución o dependencias faltantes.
    */
@@ -789,11 +819,7 @@ export default class CodexBarExtension extends Extension {
     );
 
     if (!codexbarExists) {
-      let dep1Cmd = new St.Label({
-        text: "brew install steipete/tap/codexbar",
-        style: "font-family: monospace; font-size: 0.85em; color: #3584e4; background-color: rgba(0,0,0,0.3); padding: 4px; border-radius: 4px; margin-top: 4px;",
-      });
-      dep1Box.add_child(dep1Cmd);
+      dep1Box.add_child(this._createCommandWithCopyButton("brew install steipete/tap/codexbar"));
     }
     box.add_child(dep1Box);
 
@@ -830,13 +856,94 @@ export default class CodexBarExtension extends Extension {
     );
 
     if (!importerExists) {
-      let dep2Cmd = new St.Label({
-        text: "pip install codexbar-cookie-importer",
-        style: "font-family: monospace; font-size: 0.85em; color: #3584e4; background-color: rgba(0,0,0,0.3); padding: 4px; border-radius: 4px; margin-top: 4px;",
-      });
-      dep2Box.add_child(dep2Cmd);
+      dep2Box.add_child(this._createCommandWithCopyButton("pip install codexbar-cookie-importer"));
     }
     box.add_child(dep2Box);
+
+    // --- Dependency 3: SSL Redirect Shim (for Antigravity) ---
+    // --- Dependencia 3: Shim de redirección SSL (para Antigravity) ---
+    let dep3Box = new St.BoxLayout({
+      vertical: true,
+      style: "margin-bottom: 10px; background-color: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;",
+    });
+    let dep3Header = new St.BoxLayout({ vertical: false });
+
+    // Verify if the shim is installed locally in ~/.codexbar
+    const shimPath = GLib.build_filenamev([GLib.get_home_dir(), ".codexbar", "cert_redirect.so"]);
+    const shimExists = GLib.file_test(shimPath, GLib.FileTest.EXISTS);
+
+    let dep3StatusColor = shimExists ? "#2ec27e" : "#ff7800";
+    let dep3StatusText = shimExists ? _("● Installed") : _("● Optional (for Antigravity)");
+
+    dep3Header.add_child(
+      new St.Label({
+        text: _("3. SSL Redirect Shim  "),
+        style: "font-weight: bold;",
+      }),
+    );
+    dep3Header.add_child(
+      new St.Label({
+        text: dep3StatusText,
+        style: `color: ${dep3StatusColor}; font-size: 0.85em; font-weight: bold;`,
+      }),
+    );
+    dep3Box.add_child(dep3Header);
+
+    dep3Box.add_child(
+      new St.Label({
+        text: _("Required to trust local Antigravity SSL certificate on Linux."),
+        style: "font-size: 0.85em; color: #b5b5b5; margin-bottom: 4px; margin-top: 2px;",
+      }),
+    );
+
+    if (!shimExists) {
+      dep3Box.add_child(this._createCommandWithCopyButton("curl -fsSL https://raw.githubusercontent.com/InledGroup/codexbar-gnome/main/install_shim.sh | bash"));
+    }
+    box.add_child(dep3Box);
+
+    // --- Dependency 4: lsof (Required for Antigravity) ---
+    // --- Dependencia 4: lsof (Requerido para Antigravity) ---
+    let dep4Box = new St.BoxLayout({
+      vertical: true,
+      style: "margin-bottom: 10px; background-color: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;",
+    });
+    let dep4Header = new St.BoxLayout({ vertical: false });
+
+    let lsofExists = !!GLib.find_program_in_path("lsof");
+    let dep4StatusColor = lsofExists ? "#2ec27e" : "#ff7800";
+    let dep4StatusText = lsofExists ? _("● Installed") : _("● Optional (for Antigravity)");
+
+    dep4Header.add_child(
+      new St.Label({
+        text: _("4. lsof Utility  "),
+        style: "font-weight: bold;",
+      }),
+    );
+    dep4Header.add_child(
+      new St.Label({
+        text: dep4StatusText,
+        style: `color: ${dep4StatusColor}; font-size: 0.85em; font-weight: bold;`,
+      }),
+    );
+    dep4Box.add_child(dep4Header);
+
+    dep4Box.add_child(
+      new St.Label({
+        text: _("Required by the CodexBar CLI to detect local Antigravity server ports."),
+        style: "font-size: 0.85em; color: #b5b5b5; margin-bottom: 4px; margin-top: 2px;",
+      }),
+    );
+
+    if (!lsofExists) {
+      let lsofCmd = "sudo apt install lsof";
+      if (GLib.find_program_in_path("pacman")) {
+        lsofCmd = "sudo pacman -S lsof";
+      } else if (GLib.find_program_in_path("dnf")) {
+        lsofCmd = "sudo dnf install lsof";
+      }
+      dep4Box.add_child(this._createCommandWithCopyButton(lsofCmd));
+    }
+    box.add_child(dep4Box);
 
     // --- Buttons ---
     // --- Botones ---

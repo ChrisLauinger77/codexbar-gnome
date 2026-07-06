@@ -1,8 +1,8 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
-import Soup from 'gi://Soup?version=3.0';
+import Soup from 'gi://Soup';
 import { SoupApiFetcher } from './adapters/SoupApiFetcher.js';
-import { AntigravityLocalFetcher } from './adapters/AntigravityLocalFetcher.js';
+
 import { CliSubprocessFetcher } from './adapters/CliSubprocessFetcher.js';
 
 const API_BASE_URL = 'https://chatgpt.com';
@@ -145,13 +145,12 @@ export const formatResetDescription = (seconds, windowSeconds, now = new Date())
 };
 
 export class UsageApiClient {
-    constructor() {
+    constructor(extensionPath = null) {
         this._session = new Soup.Session({
             timeout: 30,
         });
         this._soupFetcher = new SoupApiFetcher(this._session);
-        this._antigravityFetcher = new AntigravityLocalFetcher(this._session);
-        this._cliFetcher = new CliSubprocessFetcher();
+        this._cliFetcher = new CliSubprocessFetcher(extensionPath);
     }
 
     /**
@@ -163,14 +162,7 @@ export class UsageApiClient {
         return this.normalizeSummary(usagePayload);
     }
 
-    /**
-     * Fetch usage summary from Antigravity local server.
-     * Obtiene el resumen de uso desde el servidor local de Antigravity.
-     */
-    async fetchAntigravitySummary(cancellable = null) {
-        const usagePayload = await this._antigravityFetcher.fetch(null, { cancellable });
-        return this.normalizeSummary(usagePayload, true);
-    }
+
 
     /**
      * Fetch usage summary via external codexbar CLI tool.

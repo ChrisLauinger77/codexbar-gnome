@@ -1,4 +1,4 @@
-import Soup from 'gi://Soup?version=3.0';
+import Soup from 'gi://Soup';
 import GLib from 'gi://GLib';
 import { UsageFetcher } from '../core/ports/UsageFetcher.js';
 import { UsageApiError } from '../usageApi.js';

@@ -5,9 +5,7 @@ UUID="codexbar@inled.es"
 ZIP_FILE="${UUID}.shell-extension.zip"
 
 # 1. Asegurarse de que esté empaquetada
-if [ ! -f "$ZIP_FILE" ]; then
-    ./build.sh
-fi
+./build.sh
 
 echo "Eliminando versión anterior (si existe)..."
 gnome-extensions uninstall "$UUID" 2>/dev/null

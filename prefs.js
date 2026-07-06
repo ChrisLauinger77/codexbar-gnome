@@ -29,13 +29,14 @@ const PREDEFINED_PROVIDERS = [
  */
 const CodexBarPrefsPage = GObject.registerClass(
 class CodexBarPrefsPage extends Adw.PreferencesPage {
-    _init(settings) {
+    _init(settings, extensionPath = null) {
         super._init({
             title: _('General'),
             icon_name: 'dialog-information-symbolic',
         });
 
         this._settings = settings;
+        this._extensionPath = extensionPath;
         this._providerRows = [];
 
         this.add(this._buildSettingsGroup());
@@ -357,6 +358,42 @@ class CodexBarPrefsPage extends Adw.PreferencesPage {
                 
                 box.append(labelBox);
                 box.append(commandEntry);
+
+                if (info.id === 'antigravity') {
+                    const shimPath = GLib.build_filenamev([GLib.get_home_dir(), ".codexbar", "cert_redirect.so"]);
+                    const hasShim = GLib.file_test(shimPath, GLib.FileTest.EXISTS);
+                    const hasLsof = !!GLib.find_program_in_path("lsof");
+                    
+                    if (!hasShim) {
+                        const hintLabel = new Gtk.Label({
+                            label: _('💡 Antigravity requires a self-signed SSL redirect shim to work. Run this command in terminal to install it:\n\ncurl -fsSL https://raw.githubusercontent.com/InledGroup/codexbar-gnome/main/install_shim.sh | bash'),
+                            xalign: 0,
+                            use_markup: false,
+                            wrap: true,
+                            css_classes: ['dim-label'],
+                        });
+                        hintLabel.set_margin_top(6);
+                        box.append(hintLabel);
+                    }
+
+                    if (!hasLsof) {
+                        let lsofCmd = "sudo apt install lsof";
+                        if (GLib.find_program_in_path("pacman")) {
+                            lsofCmd = "sudo pacman -S lsof";
+                        } else if (GLib.find_program_in_path("dnf")) {
+                            lsofCmd = "sudo dnf install lsof";
+                        }
+                        const lsofLabel = new Gtk.Label({
+                            label: _(`⚠️ Antigravity requires the 'lsof' utility to detect the local server ports. Run this command to install it:\n\n${lsofCmd}`),
+                            xalign: 0,
+                            use_markup: false,
+                            wrap: true,
+                            css_classes: ['dim-label'],
+                        });
+                        lsofLabel.set_margin_top(6);
+                        box.append(lsofLabel);
+                    }
+                }
             }
 
             if (!isPredefined) {
@@ -625,14 +662,14 @@ class CodexBarPrefsPage extends Adw.PreferencesPage {
                         if (e.message && e.message.includes('No module named')) {
                             showMissingDialog();
                         } else {
-                            logError(e, 'CodexBar: Error reading importer output');
+                            console.error(e, 'CodexBar: Error reading importer output');
                             showError(_('Unexpected Error'), e.message);
                         }
                     }
                 }
             });
         } catch (e) {
-            logError(e, 'CodexBar: Error in _importFromBrowser');
+            console.error(e, 'CodexBar: Error in _importFromBrowser');
             showMissingDialog();
         }
     }
@@ -645,7 +682,7 @@ class CodexBarPrefsPage extends Adw.PreferencesPage {
 export default class CodexBarPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings();
-        const page = new CodexBarPrefsPage(settings);
+        const page = new CodexBarPrefsPage(settings, this.path);
         window.add(page);
 
         // Null out token schema when preferences window is closed
