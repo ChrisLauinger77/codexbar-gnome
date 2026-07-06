@@ -23,6 +23,7 @@ export default class CodexBarExtension extends Extension {
   enable() {
     this._settings = this.getSettings();
     this._apiClient = new UsageApiClient(this.path);
+    this._copyTimeouts = [];
 
     // Main indicator button in the panel
     // Botón indicador principal en el panel
@@ -155,6 +156,10 @@ export default class CodexBarExtension extends Extension {
     if (this._timeoutId) {
       GLib.source_remove(this._timeoutId);
       this._timeoutId = null;
+    }
+    if (this._copyTimeouts) {
+      this._copyTimeouts.forEach((id) => GLib.source_remove(id));
+      this._copyTimeouts = null;
     }
 
     // Step 4: Disconnect all settings signals
@@ -769,10 +774,19 @@ export default class CodexBarExtension extends Extension {
       const clipboard = St.Clipboard.get_default();
       clipboard.set_text(St.ClipboardType.CLIPBOARD, commandText);
       copyBtn.label = _("Copied!");
-      GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1500, () => {
+      let timeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1500, () => {
         copyBtn.label = _("Copy");
+        if (this._copyTimeouts) {
+          const index = this._copyTimeouts.indexOf(timeoutId);
+          if (index > -1) {
+            this._copyTimeouts.splice(index, 1);
+          }
+        }
         return GLib.SOURCE_REMOVE;
       });
+      if (this._copyTimeouts) {
+        this._copyTimeouts.push(timeoutId);
+      }
     });
     box.add_child(copyBtn);
 
