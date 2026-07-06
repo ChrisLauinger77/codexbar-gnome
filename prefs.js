@@ -96,23 +96,7 @@ class CodexBarPrefsPage extends Adw.PreferencesPage {
         reviewRow.add_suffix(reviewBtn);
         group.add(reviewRow);
 
-        // Inled Newsletter
-        const newsRow = new Adw.ActionRow({
-            title: _('Inled Newsletter'),
-            subtitle: _('Get the latest news and updates from Inled directly in your inbox!'),
-        });
-        newsRow.add_prefix(new Gtk.Image({ icon_name: 'mail-send-symbolic' }));
 
-        const newsBtn = new Gtk.Button({
-            icon_name: 'go-next-symbolic',
-            valign: Gtk.Align.CENTER,
-            css_classes: ['flat'],
-        });
-        newsBtn.connect('clicked', () => {
-            Gio.app_info_launch_default_for_uri('https://7c0cb458.sibforms.com/serve/MUIFAPqS4aMwyG9eiASS-LRNOT1zsY2xefVUxEuu2jAL8znxvos7hP7gQsASGgyC6FdUHJvi2SOr4NUmxUqmkcBOTRyGUZauKcn6dvP24DSLYDmXnHyIO3ZToBhJ6PGaE5JnYTdECW_d6ezFdrjwEmRihA2TkJsf8HueD3VesU8vkYGa_1iHNFWwq3yvrRD7gVXgiEj2l8rib1CL5A==', null);
-        });
-        newsRow.add_suffix(newsBtn);
-        group.add(newsRow);
 
         // Contact Inled
         const contactRow = new Adw.ActionRow({
@@ -149,6 +133,45 @@ class CodexBarPrefsPage extends Adw.PreferencesPage {
         });
         webRow.add_suffix(webBtn);
         group.add(webRow);
+
+        // Social Media
+        const socialRow = new Adw.ActionRow({
+            title: _('Join the Community'),
+            subtitle: _('Follow us on social media for updates and support'),
+        });
+        socialRow.add_prefix(new Gtk.Image({ icon_name: 'system-users-symbolic' }));
+
+        const socialBox = new Gtk.Box({
+            orientation: Gtk.Orientation.HORIZONTAL,
+            spacing: 12,
+            valign: Gtk.Align.CENTER,
+        });
+
+        const createSocialBtn = (name, url, tooltip) => {
+            const iconPath = GLib.build_filenamev([this._extensionPath, "media", "logos", `${name}-symbolic.svg`]);
+            const btn = new Gtk.Button({
+                css_classes: ['flat'],
+                tooltip_text: tooltip,
+            });
+            if (GLib.file_test(iconPath, GLib.FileTest.EXISTS)) {
+                const gicon = Gio.Icon.new_for_string(iconPath);
+                btn.set_child(new Gtk.Image({ gicon: gicon }));
+            } else {
+                btn.set_label(tooltip);
+            }
+            btn.connect('clicked', () => {
+                Gio.app_info_launch_default_for_uri(url, null);
+            });
+            return btn;
+        };
+
+        socialBox.append(createSocialBtn('discord', 'https://discord.com/invite/PSeTkDMnr', 'Discord'));
+        socialBox.append(createSocialBtn('mastodon', 'https://mastodon.social/@inled', 'Mastodon'));
+        socialBox.append(createSocialBtn('youtube', 'https://www.youtube.com/@inledgroup', 'YouTube'));
+        socialBox.append(createSocialBtn('x', 'https://x.com/inledgroup', 'X (Twitter)'));
+
+        socialRow.add_suffix(socialBox);
+        group.add(socialRow);
 
         return group;
     }
@@ -360,22 +383,8 @@ class CodexBarPrefsPage extends Adw.PreferencesPage {
                 box.append(commandEntry);
 
                 if (info.id === 'antigravity') {
-                    const shimPath = GLib.build_filenamev([GLib.get_home_dir(), ".codexbar", "cert_redirect.so"]);
-                    const hasShim = GLib.file_test(shimPath, GLib.FileTest.EXISTS);
                     const hasLsof = !!GLib.find_program_in_path("lsof");
                     
-                    if (!hasShim) {
-                        const hintLabel = new Gtk.Label({
-                            label: _('💡 Antigravity requires a self-signed SSL redirect shim to work. Run this command in terminal to install it:\n\ncurl -fsSL https://raw.githubusercontent.com/InledGroup/codexbar-gnome/main/install_shim.sh | bash'),
-                            xalign: 0,
-                            use_markup: false,
-                            wrap: true,
-                            css_classes: ['dim-label'],
-                        });
-                        hintLabel.set_margin_top(6);
-                        box.append(hintLabel);
-                    }
-
                     if (!hasLsof) {
                         let lsofCmd = "sudo apt install lsof";
                         if (GLib.find_program_in_path("pacman")) {
@@ -393,6 +402,41 @@ class CodexBarPrefsPage extends Adw.PreferencesPage {
                         lsofLabel.set_margin_top(6);
                         box.append(lsofLabel);
                     }
+
+                    // Antigravity SSL certificate setup
+                    const certLabel = new Gtk.Label({
+                        label: _('💡 To trust the local Antigravity self-signed SSL certificate, click below to install it into your system ca-certificates bundle (requires administrator authorization).'),
+                        xalign: 0,
+                        use_markup: false,
+                        wrap: true,
+                        css_classes: ['dim-label'],
+                    });
+                    certLabel.set_margin_top(12);
+                    box.append(certLabel);
+
+                    const installCertBtn = new Gtk.Button({
+                        label: _('Install Antigravity SSL Certificate'),
+                        margin_top: 6,
+                    });
+                    
+                    const certSpinner = new Gtk.Spinner({
+                        valign: Gtk.Align.CENTER,
+                        margin_start: 6,
+                    });
+                    certSpinner.set_margin_top(6);
+                    
+                    const certBox = new Gtk.Box({ spacing: 6 });
+                    certBox.append(installCertBtn);
+                    certBox.append(certSpinner);
+                    box.append(certBox);
+
+                    installCertBtn.connect('clicked', () => {
+                        installCertBtn.sensitive = false;
+                        certSpinner.start();
+                        this._installAntigravityCert(certSpinner, () => {
+                            installCertBtn.sensitive = true;
+                        });
+                    });
                 }
             }
 
@@ -672,6 +716,228 @@ class CodexBarPrefsPage extends Adw.PreferencesPage {
             console.error(e, 'CodexBar: Error in _importFromBrowser');
             showMissingDialog();
         }
+    }
+
+    /**
+     * Scan ports, download cert, and install to system CA store using pkexec.
+     */
+    async _installAntigravityCert(spinner, callback = null) {
+        const finish = () => {
+            if (callback) callback();
+            spinner.stop();
+        };
+
+        const showError = (title, message) => {
+            const dialog = new Adw.MessageDialog({
+                heading: title,
+                body: message,
+                transient_for: this.get_root(),
+                modal: true,
+            });
+            dialog.add_response('ok', _('OK'));
+            dialog.present();
+            finish();
+        };
+
+        try {
+            // 1. Discover local ports
+            const ports = await this._discoverAntigravityPorts();
+            if (ports.length === 0) {
+                showError(_('No Server Found / Servidor no encontrado'), _('Could not find any running Antigravity server process. Please ensure your Antigravity local language server is active and try again. / No se pudo encontrar ningún proceso del servidor Antigravity activo. Por favor, asegúrate de que tu servidor de lenguaje local de Antigravity esté activo e inténtalo de nuevo.'));
+                return;
+            }
+
+            // 2. Extract self-signed certificate
+            let cert = null;
+            for (const port of ports) {
+                cert = await this._extractCertificate(port);
+                if (cert) break;
+            }
+
+            if (!cert) {
+                showError(_('Extraction Failed / Error de extracción'), _('Failed to extract the self-signed SSL certificate from the running Antigravity server ports. / Falló la extracción del certificado SSL auto-firmado de los puertos activos del servidor Antigravity.'));
+                return;
+            }
+
+            // 3. Save to a temporary file in user cache
+            const cacheDir = GLib.build_filenamev([GLib.get_user_cache_dir(), "codexbar-gnome"]);
+            GLib.mkdir_with_parents(cacheDir, 0o755);
+            const tempCertPath = GLib.build_filenamev([cacheDir, "antigravity-temp.crt"]);
+
+            const file = Gio.File.new_for_path(tempCertPath);
+            await new Promise((resolve, reject) => {
+                file.replace_contents_async(
+                    new TextEncoder().encode(cert),
+                    null,
+                    false,
+                    Gio.FileCreateFlags.REPLACE_DESTINATION,
+                    null,
+                    (f, res) => {
+                        try {
+                            f.replace_contents_finish(res);
+                            resolve();
+                        } catch (e) {
+                            reject(e);
+                        }
+                    }
+                );
+            });
+
+            // 4. Elevate permissions via pkexec to copy the cert to system CA bundle
+            const command = `pkexec sh -c "cp ${tempCertPath} /usr/local/share/ca-certificates/antigravity.crt && update-ca-certificates"`;
+            const proc = new Gio.Subprocess({
+                argv: ["bash", "-c", command],
+                flags: Gio.SubprocessFlags.NONE,
+            });
+            proc.init(null);
+
+            proc.wait_async(null, (p, res) => {
+                try {
+                    const success = p.wait_finish(res);
+                    if (success) {
+                        const dialog = new Adw.MessageDialog({
+                            heading: _('Success / Éxito'),
+                            body: _('Antigravity SSL certificate successfully installed and trusted at system level! / ¡Certificado SSL de Antigravity instalado y confiado a nivel de sistema!'),
+                            transient_for: this.get_root(),
+                            modal: true,
+                        });
+                        dialog.add_response('ok', _('OK'));
+                        dialog.present();
+                    } else {
+                        showError(_('Authorization Failed / Error de autorización'), _('The certificate could not be installed because the authorization request was canceled or failed. / No se pudo instalar el certificado porque la solicitud de autorización falló o fue cancelada.'));
+                    }
+                } catch (e) {
+                    showError(_('Execution Error'), e.message);
+                } finally {
+                    finish();
+                }
+            });
+
+        } catch (e) {
+            showError(_('Unexpected Error'), e.message);
+        }
+    }
+
+    /**
+     * Scan active ports of the local Antigravity server.
+     */
+    async _discoverAntigravityPorts() {
+        const ports = [];
+        
+        // Method A: run 'ss -lntp' to list socket processes
+        try {
+            const proc = Gio.Subprocess.new(
+                ["ss", "-lnt", "-p"],
+                Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+            );
+            const [stdout] = await new Promise((resolve) => {
+                proc.communicate_utf8_async(null, null, (p, res) => {
+                    try {
+                        const [ok, out] = p.communicate_utf8_finish(res);
+                        resolve([out || ""]);
+                    } catch (e) {
+                        resolve([""]);
+                    }
+                });
+            });
+            
+            if (stdout) {
+                const lines = stdout.split('\n');
+                for (const line of lines) {
+                    const matchPort = line.match(/(?:127\.0\.0\.1|\[::1\]):(\d+)/);
+                    if (matchPort) {
+                        const port = parseInt(matchPort[1], 10);
+                        if (line.includes('"agy"') || line.includes('"Antigravity"') || line.includes('"language_server"') || line.includes('"language-server"')) {
+                            if (!ports.includes(port)) {
+                                ports.push(port);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            // Ignore
+        }
+        
+        // Method B: Parse /proc/net/tcp directly
+        if (ports.length === 0) {
+            try {
+                const tcpFile = Gio.File.new_for_path('/proc/net/tcp');
+                const [, content] = await new Promise((resolve) => {
+                    tcpFile.load_contents_async(null, (file, res) => {
+                        try {
+                            const [ok, data] = file.load_contents_finish(res);
+                            resolve([ok, new TextDecoder().decode(data)]);
+                        } catch (e) {
+                            resolve([false, ""]);
+                        }
+                    });
+                });
+
+                if (content) {
+                    const lines = content.split('\n');
+                    for (let i = 1; i < lines.length; i++) {
+                        const line = lines[i].trim();
+                        if (!line) continue;
+                        const parts = line.split(/\s+/);
+                        if (parts.length > 2) {
+                            const localAddr = parts[1];
+                            const state = parts[3];
+                            if (state === '0A') { // State 0A = LISTEN
+                                const addrParts = localAddr.split(':');
+                                if (addrParts.length === 2) {
+                                    const ipHex = addrParts[0];
+                                    const portHex = addrParts[1];
+                                    if (ipHex === '0100007F' || ipHex === '00000000') {
+                                        const port = parseInt(portHex, 16);
+                                        if (!ports.includes(port)) {
+                                            ports.push(port);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                // Ignore
+            }
+        }
+        
+        return ports;
+    }
+
+    /**
+     * Run openssl s_client to extract the self-signed certificate from the port.
+     */
+    async _extractCertificate(port) {
+        try {
+            const proc = Gio.Subprocess.new(
+                ["bash", "-c", `openssl s_client -showcerts -connect 127.0.0.1:${port} < /dev/null 2>/dev/null`],
+                Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+            );
+            const [stdout] = await new Promise((resolve) => {
+                proc.communicate_utf8_async(null, null, (p, res) => {
+                    try {
+                        const [ok, out] = p.communicate_utf8_finish(res);
+                        resolve([out || ""]);
+                    } catch (e) {
+                        resolve([""]);
+                    }
+                });
+            });
+
+            if (stdout && stdout.includes("-----BEGIN CERTIFICATE-----")) {
+                const startIdx = stdout.indexOf("-----BEGIN CERTIFICATE-----");
+                const endIdx = stdout.indexOf("-----END CERTIFICATE-----") + "-----END CERTIFICATE-----".length;
+                if (startIdx !== -1 && endIdx !== -1) {
+                    return stdout.substring(startIdx, endIdx);
+                }
+            }
+        } catch (e) {
+            // Ignore
+        }
+        return null;
     }
 });
 
