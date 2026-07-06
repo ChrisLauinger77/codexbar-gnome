@@ -280,24 +280,26 @@ export default class CodexBarExtension extends Extension {
           if (data.labels && data.labels.length > 0) {
             apiLabels = data.labels;
           } else {
-            ["primary", "secondary", "tertiary", "quaternary"].forEach((tier) => {
-              const win = data.usage[tier];
-              if (win && win.windowSeconds) {
-                const hours = Math.round(win.windowSeconds / 3600);
-                if (hours >= 24) {
-                  const days = Math.round(hours / 24);
-                  apiLabels.push(
-                    days === 7
-                      ? _("Weekly Window")
-                      : _("%d-Day Window").format(days),
-                  );
-                } else {
-                  apiLabels.push(_("%d-Hour Window").format(hours));
+            ["primary", "secondary", "tertiary", "quaternary"].forEach(
+              (tier) => {
+                const win = data.usage[tier];
+                if (win && win.windowSeconds) {
+                  const hours = Math.round(win.windowSeconds / 3600);
+                  if (hours >= 24) {
+                    const days = Math.round(hours / 24);
+                    apiLabels.push(
+                      days === 7
+                        ? _("Weekly Window")
+                        : _("%d-Day Window").format(days),
+                    );
+                  } else {
+                    apiLabels.push(_("%d-Hour Window").format(hours));
+                  }
+                } else if (win) {
+                  apiLabels.push(_("Usage Window"));
                 }
-              } else if (win) {
-                apiLabels.push(_("Usage Window"));
-              }
-            });
+              },
+            );
           }
 
           this._providersData[i] = {
@@ -322,23 +324,33 @@ export default class CodexBarExtension extends Extension {
       }
 
       try {
-        const result = await this._apiClient.fetchCliSummary(provider.command, this._cancellable);
+        const result = await this._apiClient.fetchCliSummary(
+          provider.command,
+          this._cancellable,
+        );
         if (!this._cancellable || this._cancellable.is_cancelled()) return;
 
         let rawData = result.data;
         let finalLabels = result.labels || [];
 
         if (rawData) {
-          const isAntigravity = provider.id === "antigravity" || rawData.provider === "antigravity";
-          
+          const isAntigravity =
+            provider.id === "antigravity" || rawData.provider === "antigravity";
+
           if (rawData.usage) {
-            const normalized = this._apiClient.normalizeSummary(rawData.usage, isAntigravity);
+            const normalized = this._apiClient.normalizeSummary(
+              rawData.usage,
+              isAntigravity,
+            );
             rawData.usage = normalized.usage;
             if (normalized.labels && normalized.labels.length > 0) {
               finalLabels = normalized.labels;
             }
           } else {
-            const normalized = this._apiClient.normalizeSummary(rawData, isAntigravity);
+            const normalized = this._apiClient.normalizeSummary(
+              rawData,
+              isAntigravity,
+            );
             rawData = { ...rawData, usage: normalized.usage };
             if (normalized.labels && normalized.labels.length > 0) {
               finalLabels = normalized.labels;
@@ -353,7 +365,10 @@ export default class CodexBarExtension extends Extension {
         };
       } catch (error) {
         if (this._cancellable && !this._cancellable.is_cancelled()) {
-          console.error(error, `CodexBar: error running provider ${provider.name}`);
+          console.error(
+            error,
+            `CodexBar: error running provider ${provider.name}`,
+          );
           let msg = error.message;
           if (!msg && error.toString) msg = error.toString();
           if (!msg || msg === "[object Object]") msg = _("Unknown CLI error");
@@ -713,13 +728,13 @@ export default class CodexBarExtension extends Extension {
 
     if (GLib.file_test(logoPath, GLib.FileTest.EXISTS)) {
       const gicon = Gio.Icon.new_for_string(logoPath);
-      
+
       let icon = new St.Icon({
         gicon: gicon,
         icon_size: 16,
         style_class: "codexbar-tab-icon",
       });
-      
+
       return icon;
     }
     return null;
@@ -733,18 +748,21 @@ export default class CodexBarExtension extends Extension {
     let box = new St.BoxLayout({
       vertical: false,
       x_expand: true,
-      style: "background-color: rgba(0,0,0,0.3); padding: 4px 8px; border-radius: 4px; margin-top: 4px; spacing: 8px;",
+      style:
+        "background-color: rgba(0,0,0,0.3); padding: 4px 8px; border-radius: 4px; margin-top: 4px; spacing: 8px;",
     });
 
     let cmdLabel = new St.Label({
       text: commandText,
-      style: "font-family: monospace; font-size: 0.8em; color: #3584e4; y-align: middle;",
+      style:
+        "font-family: monospace; font-size: 0.8em; color: #3584e4; y-align: middle;",
       x_expand: true,
     });
     box.add_child(cmdLabel);
 
     let copyBtn = new St.Button({
-      style: "padding: 2px 6px; background-color: rgba(255,255,255,0.1); border-radius: 3px; font-size: 0.8em; color: #ffffff;",
+      style:
+        "padding: 2px 6px; background-color: rgba(255,255,255,0.1); border-radius: 3px; font-size: 0.8em; color: #ffffff;",
       label: _("Copy"),
     });
     copyBtn.connect("clicked", () => {
@@ -790,7 +808,8 @@ export default class CodexBarExtension extends Extension {
     // --- Dependencia 1: CodexBar CLI ---
     let dep1Box = new St.BoxLayout({
       vertical: true,
-      style: "margin-bottom: 10px; background-color: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;",
+      style:
+        "margin-bottom: 10px; background-color: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;",
     });
     let dep1Header = new St.BoxLayout({ vertical: false });
 
@@ -814,25 +833,31 @@ export default class CodexBarExtension extends Extension {
     dep1Box.add_child(
       new St.Label({
         text: _("Required to query AI usage metrics."),
-        style: "font-size: 0.85em; color: #b5b5b5; margin-bottom: 4px; margin-top: 2px;",
+        style:
+          "font-size: 0.85em; color: #b5b5b5; margin-bottom: 4px; margin-top: 2px;",
       }),
     );
 
     if (!codexbarExists) {
-      dep1Box.add_child(this._createCommandWithCopyButton("brew install steipete/tap/codexbar"));
+      dep1Box.add_child(
+        this._createCommandWithCopyButton("brew install steipete/tap/codexbar"),
+      );
     }
     box.add_child(dep1Box);
 
-    // --- Dependency 2: Cookie Importer ---
-    // --- Dependencia 2: Importador de Cookies ---
+    // --- Dependency 2: Cookie Importer for codex ---
+    // --- Dependencia 2: Importador de Cookies para codex---
     let dep2Box = new St.BoxLayout({
       vertical: true,
-      style: "margin-bottom: 10px; background-color: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;",
+      style:
+        "margin-bottom: 10px; background-color: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;",
     });
     let dep2Header = new St.BoxLayout({ vertical: false });
 
     let dep2StatusColor = importerExists ? "#2ec27e" : "#ff7800";
-    let dep2StatusText = importerExists ? _("● Installed") : _("● Optional (for Auto-Login)");
+    let dep2StatusText = importerExists
+      ? _("● Installed")
+      : _("● Optional (for Auto-Login)");
 
     dep2Header.add_child(
       new St.Label({
@@ -851,12 +876,17 @@ export default class CodexBarExtension extends Extension {
     dep2Box.add_child(
       new St.Label({
         text: _("Enables browser auto-login for Codex (ChatGPT)."),
-        style: "font-size: 0.85em; color: #b5b5b5; margin-bottom: 4px; margin-top: 2px;",
+        style:
+          "font-size: 0.85em; color: #b5b5b5; margin-bottom: 4px; margin-top: 2px;",
       }),
     );
 
     if (!importerExists) {
-      dep2Box.add_child(this._createCommandWithCopyButton("pip install codexbar-cookie-importer"));
+      dep2Box.add_child(
+        this._createCommandWithCopyButton(
+          "pip install codexbar-cookie-importer",
+        ),
+      );
     }
     box.add_child(dep2Box);
 
@@ -864,16 +894,23 @@ export default class CodexBarExtension extends Extension {
     // --- Dependencia 3: Shim de redirección SSL (para Antigravity) ---
     let dep3Box = new St.BoxLayout({
       vertical: true,
-      style: "margin-bottom: 10px; background-color: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;",
+      style:
+        "margin-bottom: 10px; background-color: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;",
     });
     let dep3Header = new St.BoxLayout({ vertical: false });
 
     // Verify if the shim is installed locally in ~/.codexbar
-    const shimPath = GLib.build_filenamev([GLib.get_home_dir(), ".codexbar", "cert_redirect.so"]);
+    const shimPath = GLib.build_filenamev([
+      GLib.get_home_dir(),
+      ".codexbar",
+      "cert_redirect.so",
+    ]);
     const shimExists = GLib.file_test(shimPath, GLib.FileTest.EXISTS);
 
     let dep3StatusColor = shimExists ? "#2ec27e" : "#ff7800";
-    let dep3StatusText = shimExists ? _("● Installed") : _("● Optional (for Antigravity)");
+    let dep3StatusText = shimExists
+      ? _("● Installed")
+      : _("● Optional (for Antigravity)");
 
     dep3Header.add_child(
       new St.Label({
@@ -891,13 +928,20 @@ export default class CodexBarExtension extends Extension {
 
     dep3Box.add_child(
       new St.Label({
-        text: _("Required to trust local Antigravity SSL certificate on Linux."),
-        style: "font-size: 0.85em; color: #b5b5b5; margin-bottom: 4px; margin-top: 2px;",
+        text: _(
+          "Required to trust local Antigravity SSL certificate on Linux.",
+        ),
+        style:
+          "font-size: 0.85em; color: #b5b5b5; margin-bottom: 4px; margin-top: 2px;",
       }),
     );
 
     if (!shimExists) {
-      dep3Box.add_child(this._createCommandWithCopyButton("curl -fsSL https://raw.githubusercontent.com/InledGroup/codexbar-gnome/main/install_shim.sh | bash"));
+      dep3Box.add_child(
+        this._createCommandWithCopyButton(
+          "curl -fsSL https://raw.githubusercontent.com/InledGroup/codexbar-gnome/main/install_shim.sh | bash",
+        ),
+      );
     }
     box.add_child(dep3Box);
 
@@ -905,13 +949,16 @@ export default class CodexBarExtension extends Extension {
     // --- Dependencia 4: lsof (Requerido para Antigravity) ---
     let dep4Box = new St.BoxLayout({
       vertical: true,
-      style: "margin-bottom: 10px; background-color: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;",
+      style:
+        "margin-bottom: 10px; background-color: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;",
     });
     let dep4Header = new St.BoxLayout({ vertical: false });
 
     let lsofExists = !!GLib.find_program_in_path("lsof");
     let dep4StatusColor = lsofExists ? "#2ec27e" : "#ff7800";
-    let dep4StatusText = lsofExists ? _("● Installed") : _("● Optional (for Antigravity)");
+    let dep4StatusText = lsofExists
+      ? _("● Installed")
+      : _("● Optional (for Antigravity)");
 
     dep4Header.add_child(
       new St.Label({
@@ -929,8 +976,11 @@ export default class CodexBarExtension extends Extension {
 
     dep4Box.add_child(
       new St.Label({
-        text: _("Required by the CodexBar CLI to detect local Antigravity server ports."),
-        style: "font-size: 0.85em; color: #b5b5b5; margin-bottom: 4px; margin-top: 2px;",
+        text: _(
+          "Required by the CodexBar CLI to detect local Antigravity server ports.",
+        ),
+        style:
+          "font-size: 0.85em; color: #b5b5b5; margin-bottom: 4px; margin-top: 2px;",
       }),
     );
 
@@ -960,7 +1010,7 @@ export default class CodexBarExtension extends Extension {
     });
     docBtn.connect("clicked", () => {
       Gio.app_info_launch_default_for_uri(
-        "https://help.inled.es/codexbar-gnome",
+        "https://help.inled.es/help/codexbar-gnome",
         null,
       );
     });
