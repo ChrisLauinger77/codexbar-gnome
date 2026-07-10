@@ -904,6 +904,54 @@ export default class CodexBarExtension extends Extension {
     }
     box.add_child(dep2Box);
 
+    // --- Dependency 3: SSL Helper (for Antigravity) ---
+    // --- Dependencia 3: Asistente SSL (para Antigravity) ---
+    let dep3Box = new St.BoxLayout({
+      vertical: true,
+      style:
+        "margin-bottom: 10px; background-color: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px;",
+    });
+    let dep3Header = new St.BoxLayout({ vertical: false });
+
+    // Verify if the certificate is already installed/trusted
+    const systemCaCertsPath = "/usr/local/share/ca-certificates/antigravity.crt";
+    const certInstalled = GLib.file_test(systemCaCertsPath, GLib.FileTest.EXISTS);
+    let dep3StatusColor = certInstalled ? "#2ec27e" : "#ff7800";
+    let dep3StatusText = certInstalled
+      ? _("● Installed")
+      : _("● Optional (for Antigravity)");
+
+    dep3Header.add_child(
+      new St.Label({
+        text: _("3. SSL Helper (pip)  "),
+        style: "font-weight: bold;",
+      }),
+    );
+    dep3Header.add_child(
+      new St.Label({
+        text: dep3StatusText,
+        style: `color: ${dep3StatusColor}; font-size: 0.85em; font-weight: bold;`,
+      }),
+    );
+    dep3Box.add_child(dep3Header);
+
+    dep3Box.add_child(
+      new St.Label({
+        text: _("Required to trust the local Antigravity server certificate."),
+        style:
+          "font-size: 0.85em; color: #b5b5b5; margin-bottom: 4px; margin-top: 2px;",
+      }),
+    );
+
+    if (!certInstalled) {
+      dep3Box.add_child(
+        this._createCommandWithCopyButton(
+          "pip install codexbar-ssl-helper && codexbar-ssl-helper",
+        ),
+      );
+    }
+    box.add_child(dep3Box);
+
 
 
     // --- Buttons ---
