@@ -11,6 +11,33 @@ import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import { UsageApiClient } from "./usageApi.js";
 import { loadToken, nullTokenSchema } from "./secret.js";
 
+function logDev(msg) {
+  try {
+    const logFile = GLib.build_filenamev([
+      GLib.get_user_cache_dir(),
+      "codexbar-extension-dev.log",
+    ]);
+    let content = "";
+    if (GLib.file_test(logFile, GLib.FileTest.EXISTS)) {
+      try {
+        let [success, rawContent] = GLib.file_get_contents(logFile);
+        if (success) {
+          content = new TextDecoder().decode(rawContent);
+        }
+      } catch (e) {}
+    }
+    const timestamp = new Date().toLocaleTimeString();
+    const line = `[${timestamp}] ${msg}`;
+    let lines = (content + line + "\n").split("\n");
+    if (lines.length > 1000) {
+      lines = lines.slice(lines.length - 1000);
+    }
+    GLib.file_set_contents(logFile, lines.join("\n"));
+  } catch (e) {
+    // Ignore logging failures silently
+  }
+}
+
 /**
  * Main extension class for CodexBar.
  * Clase principal de la extensión para CodexBar.
@@ -128,8 +155,30 @@ export default class CodexBarExtension extends Extension {
     this._signals.push(
       this._settings.connect("changed::first-run", () => this._updateUI()),
     );
+    this._signals.push(
+      this._settings.connect("changed::dev-custom-output-enabled", () =>
+        this._onSettingsChanged(),
+      ),
+    );
+    this._signals.push(
+      this._settings.connect("changed::dev-custom-output-provider-name", () =>
+        this._onSettingsChanged(),
+      ),
+    );
+    this._signals.push(
+      this._settings.connect("changed::dev-custom-output-json", () =>
+        this._onSettingsChanged(),
+      ),
+    );
+    this._signals.push(
+      this._settings.connect("changed::dev-show-log-window", () =>
+        this._updateLogWindow(),
+      ),
+    );
 
+    this._logWindowProcess = null;
     this._onSettingsChanged();
+    this._updateLogWindow();
   }
 
   /**
@@ -209,6 +258,15 @@ export default class CodexBarExtension extends Extension {
     // Step 7: Release schema references to prevent memory leaks
     // Paso 7: Liberar referencias de esquemas para prevenir fugas de memoria
     nullTokenSchema();
+
+    // Step 8: Clean up developer log window
+    // Paso 8: Limpiar la ventana de registro de desarrolladores
+    if (this._logWindowProcess) {
+      try {
+        this._logWindowProcess.force_exit();
+      } catch (e) {}
+      this._logWindowProcess = null;
+    }
   }
 
   /**
@@ -253,6 +311,46 @@ export default class CodexBarExtension extends Extension {
     }
   }
 
+  _updateLogWindow() {
+    const showLogWindow = this._settings.get_boolean("dev-show-log-window");
+    if (showLogWindow) {
+      if (!this._logWindowProcess) {
+        try {
+          const logWindowScript = GLib.build_filenamev([
+            this.path,
+            "log_window.js",
+          ]);
+          this._logWindowProcess = Gio.Subprocess.new(
+            ["gjs", "-m", logWindowScript],
+            Gio.SubprocessFlags.NONE
+          );
+          
+          this._logWindowProcess.wait_async(null, (proc, res) => {
+            try {
+              proc.wait_finish(res);
+            } catch (e) {}
+            this._logWindowProcess = null;
+            if (this._settings) {
+              this._settings.set_boolean("dev-show-log-window", false);
+            }
+          });
+          
+          logDev("Developer Log Window started.");
+        } catch (e) {
+          logDev(`Failed to launch log window: ${e.message}`);
+        }
+      }
+    } else {
+      if (this._logWindowProcess) {
+        try {
+          this._logWindowProcess.force_exit();
+        } catch (e) {}
+        this._logWindowProcess = null;
+        logDev("Developer Log Window stopped.");
+      }
+    }
+  }
+
   /**
    * Refresh usage data for all enabled providers.
    * Refrescar los datos de uso para todos los proveedores habilitados.
@@ -264,16 +362,90 @@ export default class CodexBarExtension extends Extension {
     if (this._headerTitle)
       this._headerTitle.set_text(_("CodexBar (Refreshing...)"));
 
+    logDev("Refreshing usage data...");
+
+    // Intercept if developer custom output simulation is active
+    if (this._settings.get_boolean("dev-custom-output-enabled")) {
+      const mockName = this._settings.get_string("dev-custom-output-provider-name") || "Mock Provider";
+      const mockJson = this._settings.get_string("dev-custom-output-json") || "[]";
+      logDev(`[Dev Mode] Simulating custom output for provider: ${mockName}`);
+      logDev(`[Dev Mode] Input payload: ${mockJson}`);
+
+      this._providersData = [];
+      try {
+        const parsed = JSON.parse(mockJson);
+        let rawData = Array.isArray(parsed) ? parsed[0] : parsed;
+        let finalLabels = [];
+
+        if (rawData) {
+          const isAntigravity = mockName.toLowerCase() === "antigravity" || rawData.provider === "antigravity";
+          
+          if (rawData.usage) {
+            logDev(`[Dev Mode] Normalizing nested usage object...`);
+            const normalized = this._apiClient.normalizeSummary(
+              rawData.usage,
+              isAntigravity,
+            );
+            rawData.usage = normalized.usage;
+            finalLabels = normalized.labels || [];
+          } else {
+            logDev(`[Dev Mode] Normalizing flat usage object...`);
+            const normalized = this._apiClient.normalizeSummary(
+              rawData,
+              isAntigravity,
+            );
+            rawData = { ...rawData, usage: normalized.usage };
+            finalLabels = normalized.labels || [];
+          }
+        }
+
+        this._providersData[0] = {
+          data: rawData,
+          labels: finalLabels,
+          command: "mock-command",
+        };
+
+        this._providers = [{
+          id: "mock-provider",
+          name: mockName,
+          useApi: false,
+          command: "mock-command",
+        }];
+        this._activeProviderIndex = 0;
+        logDev(`[Dev Mode] Successfully simulated custom output. Labels: [${finalLabels.join(", ")}]`);
+      } catch (error) {
+        logDev(`[Dev Mode] Error parsing/normalizing mock output: ${error.message}`);
+        this._providersData[0] = {
+          error: error.message,
+          command: "mock-command",
+        };
+        this._providers = [{
+          id: "mock-provider",
+          name: mockName,
+          useApi: false,
+          command: "mock-command",
+        }];
+        this._activeProviderIndex = 0;
+      }
+
+      this._loading = false;
+      if (this._headerTitle) this._headerTitle.set_text(_("CodexBar"));
+      this._updateUI();
+      return;
+    }
+
     this._providersData = [];
 
     for (let i = 0; i < this._providers.length; i++) {
       const provider = this._providers[i];
 
       if (provider.useApi) {
+        logDev(`Fetching API summary for provider: ${provider.name}`);
         try {
           let data;
           const token = loadToken(provider.id);
           if (!token) {
+            logDev(`Error: No token found in keyring for provider: ${provider.name}`);
             this._providersData[i] = { error: _("No token found in keyring") };
             continue;
           }
@@ -311,7 +483,9 @@ export default class CodexBarExtension extends Extension {
             data: data,
             labels: apiLabels,
           };
+          logDev(`Successfully fetched API data for provider: ${provider.name}`);
         } catch (error) {
+          logDev(`API error for provider ${provider.name}: ${error.message || error}`);
           console.error(error, `CodexBar: API error for ${provider.name}`);
           let msg = error.message;
           if (!msg && error.toString) msg = error.toString();
@@ -324,16 +498,21 @@ export default class CodexBarExtension extends Extension {
       // Case 2: Provider uses CLI command (external codexbar tool)
       // Caso 2: El proveedor usa un comando CLI (herramienta codexbar externa)
       if (!provider.command) {
+        logDev(`Error: No CLI command configured for provider: ${provider.name}`);
         this._providersData[i] = { error: _("No command configured") };
         continue;
       }
 
+      logDev(`Executing CLI command for provider ${provider.name}: ${provider.command}`);
       try {
         const result = await this._apiClient.fetchCliSummary(
           provider.command,
           this._cancellable,
         );
-        if (!this._cancellable || this._cancellable.is_cancelled()) return;
+        if (!this._cancellable || this._cancellable.is_cancelled()) {
+          logDev(`CLI execution cancelled for provider: ${provider.name}`);
+          return;
+        }
 
         let rawData = result.data;
         let finalLabels = result.labels || [];
@@ -368,8 +547,10 @@ export default class CodexBarExtension extends Extension {
           labels: finalLabels,
           command: result.command,
         };
+        logDev(`Successfully executed CLI command for provider: ${provider.name}`);
       } catch (error) {
         if (this._cancellable && !this._cancellable.is_cancelled()) {
+          logDev(`CLI error for provider ${provider.name}: ${error.message || error}`);
           console.error(
             error,
             `CodexBar: error running provider ${provider.name}`,
@@ -464,6 +645,12 @@ export default class CodexBarExtension extends Extension {
           tierCount++;
         }
       });
+
+      if (tierCount === 0 && usage.providerCost && usage.providerCost.limit > 0) {
+        let p = (usage.providerCost.used / usage.providerCost.limit) * 100;
+        totalPercent += displayMode === "remaining" ? 100 - p : p;
+        tierCount++;
+      }
     }
 
     let activePercent = tierCount > 0 ? totalPercent / tierCount : 0;
@@ -639,9 +826,11 @@ export default class CodexBarExtension extends Extension {
     // Barras de uso para cada nivel
     const tiers = ["primary", "secondary", "tertiary", "quaternary"];
     const discoveredLabels = activeData.labels || [];
+    let hasTiers = false;
 
     tiers.forEach((tier, tierIdx) => {
       if (usage[tier] && usage[tier].usedPercent !== undefined) {
+        hasTiers = true;
         let tierData = usage[tier];
 
         let tierTitle =
@@ -711,6 +900,56 @@ export default class CodexBarExtension extends Extension {
         this._contentBox.add_child(sep);
       }
     });
+
+    if (!hasTiers && usage.providerCost) {
+      let costBox = new St.BoxLayout({
+        vertical: true,
+        style_class: "codexbar-cost-container",
+        x_expand: true,
+      });
+
+      let costTitleStr = usage.providerCost.period || _("Balance");
+      let costTitle = new St.Label({
+        text: costTitleStr,
+        style_class: "codexbar-cost-title",
+        x_align: Clutter.ActorAlign.CENTER,
+      });
+      costBox.add_child(costTitle);
+
+      let formattedAmount = "";
+      try {
+        let currency = usage.providerCost.currencyCode || "USD";
+        let used = usage.providerCost.used || 0;
+        let limit = usage.providerCost.limit || 0;
+        let formatter = new Intl.NumberFormat("en-US", {
+          style: "currency",
+          currency: currency,
+        });
+        if (limit > 0) {
+          formattedAmount = `${formatter.format(used)} / ${formatter.format(limit)}`;
+        } else {
+          formattedAmount = formatter.format(used);
+        }
+      } catch (e) {
+        let currencySymbol = usage.providerCost.currencyCode === "USD" ? "$" : (usage.providerCost.currencyCode || "");
+        let used = usage.providerCost.used || 0;
+        let limit = usage.providerCost.limit || 0;
+        if (limit > 0) {
+          formattedAmount = `${currencySymbol}${used.toFixed(2)} / ${currencySymbol}${limit.toFixed(2)}`;
+        } else {
+          formattedAmount = `${currencySymbol}${used.toFixed(2)}`;
+        }
+      }
+
+      let costValue = new St.Label({
+        text: formattedAmount,
+        style_class: "codexbar-cost-value",
+        x_align: Clutter.ActorAlign.CENTER,
+      });
+      costBox.add_child(costValue);
+
+      this._contentBox.add_child(costBox);
+    }
   }
 
   /**

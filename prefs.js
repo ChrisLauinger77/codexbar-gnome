@@ -90,6 +90,7 @@ const CodexBarPrefsPage = GObject.registerClass(
 
       this.add(this._buildSettingsGroup());
       this.add(this._buildProvidersGroup());
+      this.add(this._buildDeveloperGroup());
       this.add(this._buildContributeGroup());
       this.add(this._buildMaintenanceGroup());
 
@@ -97,6 +98,110 @@ const CodexBarPrefsPage = GObject.registerClass(
         this._settings = null;
         this._providerRows = [];
       });
+    }
+
+    /**
+     * Build the developer/testing group.
+     * Construye el grupo de opciones de desarrollador/pruebas.
+     */
+    _buildDeveloperGroup() {
+      const group = new Adw.PreferencesGroup({
+        title: _("Developer & Testing Options"),
+        description: _(
+          "Simulate custom CLI outputs and view debug logs.",
+        ),
+      });
+
+      // 1. Toggle Custom Output
+      const enabledRow = new Adw.SwitchRow({
+        title: _("Test with Custom Output"),
+        subtitle: _(
+          "Intercept CLI queries and return the custom JSON entered below",
+        ),
+        active: this._settings.get_boolean("dev-custom-output-enabled"),
+      });
+      this._settings.bind(
+        "dev-custom-output-enabled",
+        enabledRow,
+        "active",
+        Gio.SettingsBindFlags.DEFAULT,
+      );
+      group.add(enabledRow);
+
+      // 2. Mock Provider Name
+      const providerNameRow = new Adw.EntryRow({
+        title: _("Simulated Provider Name"),
+        text: this._settings.get_string("dev-custom-output-provider-name") || "Mock Provider",
+      });
+      this._settings.bind(
+        "dev-custom-output-provider-name",
+        providerNameRow,
+        "text",
+        Gio.SettingsBindFlags.DEFAULT,
+      );
+      group.add(providerNameRow);
+
+      // 3. Mock JSON Input
+      const jsonRow = new Adw.ActionRow({
+        title: _("Simulated CLI JSON Output"),
+        subtitle: _("Paste the raw JSON output to test"),
+      });
+      
+      const scrolled = new Gtk.ScrolledWindow({
+        min_content_height: 120,
+        hexpand: true,
+        vexpand: false,
+      });
+      scrolled.set_has_frame(true);
+      
+      const jsonView = new Gtk.TextView({
+        monospace: true,
+        wrap_mode: Gtk.WrapMode.WORD,
+      });
+      jsonView.get_buffer().set_text(
+        this._settings.get_string("dev-custom-output-json") || "[]",
+        -1,
+      );
+      jsonView.get_buffer().connect("changed", () => {
+        const buffer = jsonView.get_buffer();
+        const start = buffer.get_start_iter();
+        const end = buffer.get_end_iter();
+        const text = buffer.get_text(start, end, true).trim();
+        this._settings.set_string("dev-custom-output-json", text);
+      });
+
+      scrolled.set_child(jsonView);
+      
+      const jsonBox = new Gtk.Box({
+        orientation: Gtk.Orientation.VERTICAL,
+        spacing: 6,
+        margin_top: 8,
+        margin_bottom: 8,
+        margin_start: 8,
+        margin_end: 8,
+      });
+      jsonBox.append(scrolled);
+      
+      jsonRow.add_suffix(jsonBox);
+      group.add(jsonRow);
+
+      // 4. Show Log Window Toggle
+      const logWindowRow = new Adw.SwitchRow({
+        title: _("Show Standalone Log Window"),
+        subtitle: _(
+          "Open a separate GTK window displaying real-time extension execution logs",
+        ),
+        active: this._settings.get_boolean("dev-show-log-window"),
+      });
+      this._settings.bind(
+        "dev-show-log-window",
+        logWindowRow,
+        "active",
+        Gio.SettingsBindFlags.DEFAULT,
+      );
+      group.add(logWindowRow);
+
+      return group;
     }
 
     /**

@@ -291,3 +291,34 @@ if (JSON.stringify(codexSpark.labels) !== JSON.stringify(expectedSparkLabels)) {
 console.log(
   "✓ Codex extraRateWindows are appended after canonical windows with labels",
 );
+
+// Test OpenCode Go Zen providerCost normalization
+const zenPayload = {
+  updatedAt: "2026-07-15T10:00:00Z",
+  primary: null,
+  secondary: null,
+  tertiary: null,
+  providerCost: {
+    used: 73.63,
+    limit: 0,
+    currencyCode: "USD",
+    period: "Zen balance"
+  }
+};
+const normalizedZen = client.normalizeSummary(zenPayload, false);
+if (!normalizedZen.usage.providerCost) {
+  throw new Error("Expected providerCost to be present in normalized output");
+}
+if (normalizedZen.usage.providerCost.used !== 73.63) {
+  throw new Error(`Expected providerCost.used to be 73.63, got ${normalizedZen.usage.providerCost.used}`);
+}
+if (normalizedZen.usage.providerCost.limit !== 0) {
+  throw new Error(`Expected providerCost.limit to be 0, got ${normalizedZen.usage.providerCost.limit}`);
+}
+if (normalizedZen.usage.providerCost.currencyCode !== "USD") {
+  throw new Error(`Expected providerCost.currencyCode to be 'USD', got '${normalizedZen.usage.providerCost.currencyCode}'`);
+}
+if (normalizedZen.usage.providerCost.period !== "Zen balance") {
+  throw new Error(`Expected providerCost.period to be 'Zen balance', got '${normalizedZen.usage.providerCost.period}'`);
+}
+console.log("✓ OpenCode Go Zen providerCost normalizes correctly");
