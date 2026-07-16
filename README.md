@@ -99,7 +99,7 @@ You can choose how metrics are displayed:
 Follow us on social media for updates, discussions, and support:
 
 - **Discord**: [Join our Discord server](https://discord.com/invite/PSeTkDMnr)
-- **Matrix**: [Join the Matrix server](https://matrix.to/#/!POXBFohLnmrKwRBxTi:matrix.org?via=matrix.org)
+- **Matrix**: [Join the Matrix server](https://matrix.to/#/#inledgroup:matrix.org)
 - **Mastodon**: [@inled on mastodon.social](https://mastodon.social/@inled)
 - **YouTube**: [Inled Group YouTube Channel](https://www.youtube.com/@inledgroup)
 - **X (Twitter)**: [@inledgroup on X](https://x.com/inledgroup)
@@ -115,4 +115,5 @@ This project is licensed under the terms of the MIT license. Contributions are w
 I've been working on a lot of projects lately and wasn't sure if people really cared about them until this one completely brought back my excitement for development and showed me how useful it can be for users. The GNOME community is fantastic.
 
 > [!INFO]
+> **AI DISCLAIMER**
 > Ai has been used on this project to write code and asssist. All code was been reviewed by humans and the gnome shell reviewers.
