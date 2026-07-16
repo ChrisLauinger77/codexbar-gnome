@@ -153,6 +153,9 @@ export default class CodexBarExtension extends Extension {
       this._settings.connect("changed::show-logos", () => this._updateUI()),
     );
     this._signals.push(
+      this._settings.connect("changed::show-pacing-info", () => this._updateUI()),
+    );
+    this._signals.push(
       this._settings.connect("changed::first-run", () => this._updateUI()),
     );
     this._signals.push(
@@ -788,6 +791,7 @@ export default class CodexBarExtension extends Extension {
     }
 
     const usage = data.usage;
+    const showPacing = this._settings.get_boolean("show-pacing-info");
 
     // Account information
     // Información de la cuenta
@@ -920,7 +924,7 @@ export default class CodexBarExtension extends Extension {
 
         this._contentBox.add_child(statsBox);
 
-        if (entry.showPace && tierData.windowSeconds >= 7 * 24 * 3600) {
+        if (showPacing && entry.showPace && tierData.windowSeconds >= 7 * 24 * 3600) {
           const pace = calculateUsagePace(tierData);
           if (pace) {
             const roundedReserve = Math.round(pace.reservePercent);
