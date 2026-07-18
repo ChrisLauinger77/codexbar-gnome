@@ -115,6 +115,6 @@ This project is licensed under the terms of the MIT license. Contributions are w
 ## About:  
 I've been working on a lot of projects lately and wasn't sure if people really cared about them until this one completely brought back my excitement for development and showed me how useful it can be for users. The GNOME community is fantastic.
 
-> [!INFO]
+> [!NOTE]
 > **AI DISCLAIMER**
-> AI has been used on this project. ALL THE CODE has been reviewed.
+> AI has been used on this project. ALL THE CODE that AI made has been reviewed and edited by humans (you can see the difference between ai comments and human-made comments XD)
