@@ -12,14 +12,13 @@ A GNOME Shell extension to monitor AI provider usage metrics directly from the s
 - Automatic background refreshes with configurable intervals.
 - Visual warnings (color changes) when reaching quota limits.
 - Automatic resolution of CodexBar CLI paths (Homebrew supported).
+- Calculate and display weekly usage pace from the existing quota window
+- Render Code review usage when the Linux API supplies it
+- Add regression coverage for the new normalization and pace calculation
+- Added support to show AI economic expenditure
 
 ## Updates  
-- Recovered the cookie_importer folder, deleted by mistake in commit `fec55b0`
-- show the Codex account plan and available limit-reset credits
-- calculate and display weekly usage pace from the existing quota window
-- render Code review usage when the Linux API supplies it
-- add regression coverage for the new normalization and pace calculation
-- added support to show AI economic expenditure
+- Update to support Ollama Cloud!
 
 ## Requirements
 
