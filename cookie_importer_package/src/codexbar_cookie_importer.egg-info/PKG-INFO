@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: codexbar-cookie-importer
-Version: 1.0.0
+Version: 1.2
 Summary: Cookie extraction utility for CodexBar GNOME Extension to import session tokens from Chromium browsers.
 Author-email: Inled Group <hi@inled.es>
 Project-URL: Homepage, https://github.com/InledGroup/codexbar-gnome
