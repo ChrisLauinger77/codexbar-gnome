@@ -189,6 +189,53 @@ export function normalizeDetailSections(details) {
     return sections;
 }
 
+/**
+ * Derive a used-percent from a sanitized "Credits" detail section (see
+ * normalizeDetailSections), for providers that report a balance instead of a
+ * time-bounded usage window (e.g. OpenRouter's `{usedPercent: 0, windowSeconds: 0}`
+ * placeholder tier). Returns null if no Credits section or no parseable
+ * Used/Total or Remaining/Total pair is found.
+ * @param {Array<{title: string, rows: Array<{label: string, value: string}>}>} sections
+ * @returns {number|null}
+ */
+export function deriveCreditsPercent(sections) {
+    if (!Array.isArray(sections)) return null;
+
+    const parseAmount = (value) => {
+        if (typeof value !== 'string') return NaN;
+        const match = value.replace(/,/g, '').match(/-?\d+(\.\d+)?/);
+        return match ? parseFloat(match[0]) : NaN;
+    };
+
+    const creditsSection = sections.find(
+        (section) => section && typeof section.title === 'string' &&
+            section.title.trim().toLowerCase() === 'credits'
+    );
+    if (!creditsSection || !Array.isArray(creditsSection.rows)) return null;
+
+    const findAmount = (label) => {
+        const row = creditsSection.rows.find(
+            (r) => r && typeof r.label === 'string' && r.label.trim().toLowerCase() === label
+        );
+        return row ? parseAmount(row.value) : NaN;
+    };
+
+    const total = findAmount('total added');
+    if (!Number.isFinite(total) || total <= 0) return null;
+
+    const used = findAmount('used');
+    if (Number.isFinite(used)) {
+        return Math.min(100, Math.max(0, (used / total) * 100));
+    }
+
+    const remaining = findAmount('remaining');
+    if (Number.isFinite(remaining)) {
+        return Math.min(100, Math.max(0, ((total - remaining) / total) * 100));
+    }
+
+    return null;
+}
+
 export const calculateUsagePace = (usageWindow) => {
     const usedPercent = Number(usageWindow?.usedPercent);
     const windowSeconds = Number(usageWindow?.windowSeconds);

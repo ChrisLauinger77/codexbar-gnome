@@ -1,5 +1,6 @@
 import {
   calculateUsagePace,
+  deriveCreditsPercent,
   formatResetDescription,
   normalizeDetailSections,
   UsageApiClient,
@@ -538,3 +539,20 @@ if (normalizeDetailSections(normalizedDashboard.usage.details).length !== 0) {
   throw new Error("Expected a provider with no details key to produce zero sections");
 }
 console.log("✓ providers without usage.details are unaffected (Claude/Codex regression guard)");
+
+// deriveCreditsPercent: OpenRouter's degenerate {usedPercent:0, windowSeconds:0}
+// "Usage Window" tier is meaningless (it reads "100% left" no matter the real
+// balance); derive a real percent from the Credits section's Used/Total added.
+const creditsPercent = deriveCreditsPercent(openRouterSections);
+if (creditsPercent === null || Math.abs(creditsPercent - 91.8) > 0.0001) {
+  throw new Error(`Expected Credits-derived percent of 91.8, got ${creditsPercent}`);
+}
+console.log("✓ deriveCreditsPercent computes used% from the Credits section's Used/Total added");
+
+if (deriveCreditsPercent([]) !== null) {
+  throw new Error("Expected deriveCreditsPercent([]) to be null (no Credits section)");
+}
+if (deriveCreditsPercent(normalizeDetailSections(normalizedDashboard.usage.details)) !== null) {
+  throw new Error("Expected deriveCreditsPercent to be null for a provider with no details");
+}
+console.log("✓ deriveCreditsPercent is null when there's no parseable Credits section");

@@ -13,6 +13,7 @@ import * as PanelMenu from "resource:///org/gnome/shell/ui/panelMenu.js";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import {
   calculateUsagePace,
+  deriveCreditsPercent,
   normalizeDetailSections,
   UsageApiClient,
 } from "./usageApi.js";
@@ -542,13 +543,25 @@ export default class CodexBarExtension extends Extension {
     let tierCount = 0;
 
     const activeData = this._providersData[this._activeProviderIndex];
+    // A tier with usedPercent:0 and no windowSeconds isn't a real usage window
+    // (e.g. OpenRouter's balance placeholder) - derive a meaningful percent from
+    // the Credits detail section instead, or drop the tier if none is available.
+    const creditsPercent = deriveCreditsPercent(
+      normalizeDetailSections(activeData?.data?.usage?.details),
+    );
+    const isDegenerateTier = (tierData) =>
+      !!tierData && !tierData.windowSeconds && tierData.usedPercent === 0;
+
     if (activeData && activeData.data && activeData.data.usage) {
       const usage = activeData.data.usage;
       const tiers = ["primary", "secondary", "tertiary", "quaternary"];
 
       tiers.forEach((tier) => {
         if (usage[tier] && usage[tier].usedPercent !== undefined) {
-          let p = this._normalizePercent(usage[tier].usedPercent);
+          if (isDegenerateTier(usage[tier]) && creditsPercent === null) return;
+          let p = isDegenerateTier(usage[tier])
+            ? creditsPercent
+            : this._normalizePercent(usage[tier].usedPercent);
           totalPercent += displayMode === "remaining" ? 100 - p : p;
           tierCount++;
         }
@@ -756,13 +769,23 @@ export default class CodexBarExtension extends Extension {
     const discoveredLabels = activeData.labels || [];
     let hasTiers = false;
 
-    const usageEntries = tiers.map((tier, tierIdx) => ({
-      data: usage[tier],
-      showPace: true,
-      title:
+    const usageEntries = tiers.map((tier, tierIdx) => {
+      let tierData = usage[tier];
+      let title =
         discoveredLabels[tierIdx] ||
-        tier.charAt(0).toUpperCase() + tier.slice(1),
-    }));
+        tier.charAt(0).toUpperCase() + tier.slice(1);
+
+      if (isDegenerateTier(tierData)) {
+        if (creditsPercent === null) {
+          tierData = null;
+        } else {
+          tierData = { ...tierData, usedPercent: creditsPercent };
+          title = _("Credits");
+        }
+      }
+
+      return { data: tierData, showPace: true, title };
+    });
     usageEntries.push({
       data: usage.codeReview,
       showPace: false,
