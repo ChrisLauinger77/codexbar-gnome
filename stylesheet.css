@@ -91,6 +91,39 @@
     margin-top: 2px;
 }
 
+.codexbar-details-section {
+    margin-bottom: 8px;
+}
+
+.codexbar-detail-group {
+    margin-bottom: 10px;
+}
+
+.codexbar-detail-title {
+    font-size: 0.9em;
+    font-weight: bold;
+    margin-bottom: 4px;
+}
+
+.codexbar-detail-label {
+    font-size: 0.8em;
+    margin-bottom: 1px;
+}
+
+.codexbar-detail-value {
+    font-size: 0.8em;
+    font-weight: bold;
+    margin-bottom: 1px;
+    padding-left: 12px;
+}
+
+.codexbar-detail-note {
+    font-size: 0.75em;
+    font-style: italic;
+    margin-left: 10px;
+    margin-bottom: 3px;
+}
+
 .codexbar-footer {
     padding: 10px;
     border-top: 1px solid rgba(255, 255, 255, 0.1);

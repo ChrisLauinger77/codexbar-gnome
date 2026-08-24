@@ -146,6 +146,49 @@ export const formatResetDescription = (seconds, windowSeconds, now = new Date())
     return `Resets at ${resetStr} (in ${hours}h)`;
 };
 
+/**
+ * Sanitize the provider-supplied `details` array from the codexbar CLI into a
+ * flat, render-safe shape. Charts are intentionally dropped (not rendered yet).
+ * @param {unknown} details
+ * @returns {Array<{title: string, rows: Array<{label: string, value: string, secondaryValue: string}>, hasChart: boolean}>}
+ */
+export function normalizeDetailSections(details) {
+    if (!Array.isArray(details)) return [];
+
+    const toText = (value) => {
+        if (typeof value === 'string') return value.trim();
+        if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '';
+        if (typeof value === 'boolean') return String(value);
+        return '';   // null, undefined, objects, arrays -> not renderable
+    };
+
+    const sections = [];
+    details.forEach((section) => {
+        if (!section || typeof section !== 'object') return;
+
+        const rows = [];
+        if (Array.isArray(section.rows)) {
+            section.rows.forEach((row) => {
+                if (!row || typeof row !== 'object') return;
+                const label = toText(row.label);
+                const value = toText(row.value);
+                if (!label && !value) return;
+                rows.push({ label, value, secondaryValue: toText(row.secondaryValue) });
+            });
+        }
+
+        if (rows.length === 0) return;   // chart-only / empty -> drop section
+
+        sections.push({
+            title: toText(section.title),
+            rows,
+            hasChart: Boolean(section.chart && typeof section.chart === 'object'),
+        });
+    });
+
+    return sections;
+}
+
 export const calculateUsagePace = (usageWindow) => {
     const usedPercent = Number(usageWindow?.usedPercent);
     const windowSeconds = Number(usageWindow?.windowSeconds);
