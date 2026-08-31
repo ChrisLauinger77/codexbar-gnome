@@ -190,11 +190,12 @@ export function normalizeDetailSections(details) {
 }
 
 /**
- * Derive a used-percent from a sanitized "Credits" detail section (see
- * normalizeDetailSections), for providers that report a balance instead of a
- * time-bounded usage window (e.g. OpenRouter's `{usedPercent: 0, windowSeconds: 0}`
- * placeholder tier). Returns null if no Credits section or no parseable
- * Used/Total or Remaining/Total pair is found.
+ * Derive a used-percent from detail sections (see normalizeDetailSections),
+ * for providers that report a balance/budget instead of a time-bounded usage window
+ * (e.g. OpenRouter's `{usedPercent: 0, windowSeconds: 0}` placeholder tier).
+ * Prefers the "API key" section's budget and remaining/used if present, and
+ * falls back to the "Credits" section's total added and remaining/used.
+ * Returns null if no valid budget/total and remaining/used pair is found.
  * @param {Array<{title: string, rows: Array<{label: string, value: string}>}>} sections
  * @returns {number|null}
  */
@@ -207,30 +208,50 @@ export function deriveCreditsPercent(sections) {
         return match ? parseFloat(match[0]) : NaN;
     };
 
-    const creditsSection = sections.find(
+    const findSection = (titles) => sections.find(
         (section) => section && typeof section.title === 'string' &&
-            section.title.trim().toLowerCase() === 'credits'
+            titles.includes(section.title.trim().toLowerCase())
     );
-    if (!creditsSection || !Array.isArray(creditsSection.rows)) return null;
 
-    const findAmount = (label) => {
-        const row = creditsSection.rows.find(
-            (r) => r && typeof r.label === 'string' && r.label.trim().toLowerCase() === label
+    const findAmount = (section, labels) => {
+        if (!section || !Array.isArray(section.rows)) return NaN;
+        const row = section.rows.find(
+            (r) => r && typeof r.label === 'string' &&
+                labels.includes(r.label.trim().toLowerCase())
         );
         return row ? parseAmount(row.value) : NaN;
     };
 
-    const total = findAmount('total added');
-    if (!Number.isFinite(total) || total <= 0) return null;
-
-    const used = findAmount('used');
-    if (Number.isFinite(used)) {
-        return Math.min(100, Math.max(0, (used / total) * 100));
+    // 1. Try API key section (API key budget & remaining/used)
+    const apiKeySection = findSection(['api key', 'api_key', 'api keys']);
+    if (apiKeySection) {
+        const budget = findAmount(apiKeySection, ['api key budget', 'budget', 'key budget']);
+        if (Number.isFinite(budget) && budget > 0) {
+            const remaining = findAmount(apiKeySection, ['api key remaining', 'remaining', 'key remaining']);
+            if (Number.isFinite(remaining)) {
+                return Math.min(100, Math.max(0, ((budget - remaining) / budget) * 100));
+            }
+            const used = findAmount(apiKeySection, ['api key used', 'used', 'key used']);
+            if (Number.isFinite(used)) {
+                return Math.min(100, Math.max(0, (used / budget) * 100));
+            }
+        }
     }
 
-    const remaining = findAmount('remaining');
-    if (Number.isFinite(remaining)) {
-        return Math.min(100, Math.max(0, ((total - remaining) / total) * 100));
+    // 2. Fall back to Credits section (Total added & remaining/used)
+    const creditsSection = findSection(['credits', 'credit']);
+    if (creditsSection) {
+        const total = findAmount(creditsSection, ['total added', 'total', 'total credits', 'credits added']);
+        if (Number.isFinite(total) && total > 0) {
+            const remaining = findAmount(creditsSection, ['remaining', 'credits remaining']);
+            if (Number.isFinite(remaining)) {
+                return Math.min(100, Math.max(0, ((total - remaining) / total) * 100));
+            }
+            const used = findAmount(creditsSection, ['used', 'credits used']);
+            if (Number.isFinite(used)) {
+                return Math.min(100, Math.max(0, (used / total) * 100));
+            }
+        }
     }
 
     return null;

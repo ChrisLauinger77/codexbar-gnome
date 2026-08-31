@@ -541,18 +541,40 @@ if (normalizeDetailSections(normalizedDashboard.usage.details).length !== 0) {
 console.log("✓ providers without usage.details are unaffected (Claude/Codex regression guard)");
 
 // deriveCreditsPercent: OpenRouter's degenerate {usedPercent:0, windowSeconds:0}
-// "Usage Window" tier is meaningless (it reads "100% left" no matter the real
-// balance); derive a real percent from the Credits section's Used/Total added.
-const creditsPercent = deriveCreditsPercent(openRouterSections);
-if (creditsPercent === null || Math.abs(creditsPercent - 91.8) > 0.0001) {
-  throw new Error(`Expected Credits-derived percent of 91.8, got ${creditsPercent}`);
+// "Usage Window" tier is meaningless; derive a real percent from the API key
+// section's budget and remaining/used if present, or fall back to Credits section.
+const apiKeyCreditsPercent = deriveCreditsPercent(openRouterSections);
+if (apiKeyCreditsPercent === null || Math.abs(apiKeyCreditsPercent - 0) > 0.0001) {
+  throw new Error(`Expected API key budget-derived percent of 0, got ${apiKeyCreditsPercent}`);
 }
-console.log("✓ deriveCreditsPercent computes used% from the Credits section's Used/Total added");
+console.log("✓ deriveCreditsPercent computes used% from API key budget and remaining");
+
+const customApiKeySection = [
+  {
+    title: "API key",
+    rows: [
+      { label: "API key budget", value: "$5.00" },
+      { label: "API key remaining", value: "$1.00" },
+    ],
+  },
+];
+const customApiKeyPercent = deriveCreditsPercent(customApiKeySection);
+if (customApiKeyPercent === null || Math.abs(customApiKeyPercent - 80) > 0.0001) {
+  throw new Error(`Expected custom API key budget percent of 80, got ${customApiKeyPercent}`);
+}
+console.log("✓ deriveCreditsPercent computes 80% used when $1.00 remains of $5.00 API key budget");
+
+const creditsOnlySections = openRouterSections.filter((s) => s.title !== "API key");
+const creditsFallbackPercent = deriveCreditsPercent(creditsOnlySections);
+if (creditsFallbackPercent === null || Math.abs(creditsFallbackPercent - 91.8) > 0.0001) {
+  throw new Error(`Expected Credits section fallback percent of 91.8, got ${creditsFallbackPercent}`);
+}
+console.log("✓ deriveCreditsPercent falls back to Credits section's Used/Total added when no API key budget");
 
 if (deriveCreditsPercent([]) !== null) {
-  throw new Error("Expected deriveCreditsPercent([]) to be null (no Credits section)");
+  throw new Error("Expected deriveCreditsPercent([]) to be null (no sections)");
 }
 if (deriveCreditsPercent(normalizeDetailSections(normalizedDashboard.usage.details)) !== null) {
   throw new Error("Expected deriveCreditsPercent to be null for a provider with no details");
 }
-console.log("✓ deriveCreditsPercent is null when there's no parseable Credits section");
+console.log("✓ deriveCreditsPercent is null when there's no parseable API key budget or Credits section");
