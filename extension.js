@@ -1089,6 +1089,7 @@ export default class CodexBarExtension extends Extension {
         "font-family: monospace; font-size: 0.8em; color: #3584e4; y-align: middle;",
       x_expand: true,
     });
+    cmdLabel.clutter_text.ellipsize = Pango.EllipsizeMode.END;
     box.add_child(cmdLabel);
 
     let copyBtn = new St.Button({
@@ -1201,7 +1202,7 @@ export default class CodexBarExtension extends Extension {
 
     dep2Header.add_child(
       new St.Label({
-        text: _("2. Cookie Importer (pip)  "),
+        text: _("2. Cookie Importer  "),
         style: "font-weight: bold;",
       }),
     );
@@ -1224,7 +1225,7 @@ export default class CodexBarExtension extends Extension {
     if (!importerExists) {
       dep2Box.add_child(
         this._createCommandWithCopyButton(
-          "pip install codexbar-cookie-importer",
+          "mkdir -p ~/.local/bin && curl -fsSL https://raw.githubusercontent.com/InledGroup/codexbar-gnome/main/scripts/codexbar-cookie-importer -o ~/.local/bin/codexbar-cookie-importer && chmod +x ~/.local/bin/codexbar-cookie-importer",
         ),
       );
     }
@@ -1249,7 +1250,7 @@ export default class CodexBarExtension extends Extension {
 
     dep3Header.add_child(
       new St.Label({
-        text: _("3. AGY Server Certificate Trust Helper (pip)  "),
+        text: _("3. AGY Server Certificate Trust Helper  "),
         style: "font-weight: bold;",
       }),
     );
@@ -1272,7 +1273,7 @@ export default class CodexBarExtension extends Extension {
     if (!certInstalled) {
       dep3Box.add_child(
         this._createCommandWithCopyButton(
-          "pip install codexbar-ssl-helper && codexbar-ssl-helper",
+          "mkdir -p ~/.local/bin && curl -fsSL https://raw.githubusercontent.com/InledGroup/codexbar-gnome/main/scripts/codexbar-ssl-helper -o ~/.local/bin/codexbar-ssl-helper && chmod +x ~/.local/bin/codexbar-ssl-helper && codexbar-ssl-helper",
         ),
       );
     }
