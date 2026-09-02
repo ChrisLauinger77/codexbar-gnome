@@ -43,11 +43,21 @@ const normalizePercentValue = (rawPercent, mode = 'used') => {
 const makeWindow = (obj) => {
     if (!obj || typeof obj !== 'object') return null;
 
-    let window_seconds = obj.limit_window_seconds || obj.window_seconds || obj.duration_seconds || 0;
+    let window_seconds =
+        obj.limit_window_seconds ||
+        obj.limitWindowSeconds ||
+        obj.window_seconds ||
+        obj.windowSeconds ||
+        obj.duration_seconds ||
+        0;
     if (!window_seconds && obj.windowMinutes) {
         window_seconds = obj.windowMinutes * 60;
     }
-    let reset_after_seconds = obj.reset_after_seconds || obj.reset_after || 0;
+    let reset_after_seconds =
+        obj.reset_after_seconds ||
+        obj.resetAfterSeconds ||
+        obj.reset_after ||
+        0;
     if (!reset_after_seconds && obj.resetsAt) {
         const diffMs = new Date(obj.resetsAt).getTime() - Date.now();
         reset_after_seconds = Math.max(0, Math.round(diffMs / 1000));
@@ -424,7 +434,13 @@ export class UsageApiClient {
         // then fill any remaining tier slots with extraRateWindows (e.g. Codex Spark)
         // Si ya tiene niveles estructurados, normalizarlos manteniendo el orden,
         // y rellenar los niveles restantes con extraRateWindows (ej. Codex Spark)
-        if (payload.primary || payload.secondary || payload.tertiary) {
+        const canonicalRateLimit = payload?.rate_limit || payload?.rateLimit;
+        if (
+            payload.primary ||
+            payload.secondary ||
+            payload.tertiary ||
+            canonicalRateLimit
+        ) {
             const labelForWindow = (win) => {
                 if (!win || !win.windowSeconds) return 'Usage Window';
                 const hours = Math.round(win.windowSeconds / 3600);
@@ -438,13 +454,47 @@ export class UsageApiClient {
             const queue = [];
             const tierKeys = ['primary', 'secondary', 'tertiary', 'quaternary'];
             tierKeys.forEach((key) => {
-                const win = mapSingle(payload[key]);
+                const snakeCaseKey = `${key}_window`;
+                const camelCaseKey = `${key}Window`;
+                const win = mapSingle(
+                    payload[key] ||
+                    canonicalRateLimit?.[snakeCaseKey] ||
+                    canonicalRateLimit?.[camelCaseKey]
+                );
                 if (win) queue.push({ win, label: labelForWindow(win) });
             });
             if (Array.isArray(extraWindows)) {
                 extraWindows.forEach((item) => {
                     const win = mapSingle(item?.window);
                     if (win) queue.push({ win, label: item?.title || labelForWindow(win) });
+                });
+            }
+
+            const additionalRateLimits =
+                payload?.additional_rate_limits || payload?.additionalRateLimits;
+            if (Array.isArray(additionalRateLimits)) {
+                additionalRateLimits.forEach((item) => {
+                    const rateLimit = item?.rate_limit || item?.rateLimit;
+                    const limitName = item?.limit_name || item?.limitName || '';
+                    const displayName = /codex.*spark/i.test(limitName)
+                        ? 'Codex Spark'
+                        : limitName;
+
+                    ['primary', 'secondary'].forEach((key) => {
+                        const rawWindow =
+                            rateLimit?.[`${key}_window`] || rateLimit?.[`${key}Window`];
+                        const win = mapSingle(rawWindow);
+                        if (!win) return;
+
+                        const windowLabel = labelForWindow(win);
+                        let suffix = windowLabel;
+                        if (windowLabel === 'Weekly Window') suffix = 'Weekly';
+                        else suffix = windowLabel.replace('Hour Window', 'hour');
+                        queue.push({
+                            win,
+                            label: displayName ? `${displayName} ${suffix}` : windowLabel,
+                        });
+                    });
                 });
             }
 

@@ -343,6 +343,73 @@ console.log(
   "✓ Codex extraRateWindows are appended after canonical windows with labels",
 );
 
+// The direct ChatGPT endpoint exposes Spark as additional_rate_limits rather
+// than the CLI's normalized extraRateWindows shape.
+const directCodexSpark = client.normalizeSummary({
+  email: "spark@example.com",
+  plan_type: "prolite",
+  rate_limit: {
+    primary_window: {
+      used_percent: 2,
+      limit_window_seconds: 18000,
+      reset_after_seconds: 14400,
+    },
+    secondary_window: {
+      used_percent: 4,
+      limit_window_seconds: 604800,
+      reset_after_seconds: 518400,
+    },
+  },
+  additional_rate_limits: [
+    {
+      limit_name: "GPT-5.3-Codex-Spark",
+      metered_feature: "codex_bengalfox",
+      rate_limit: {
+        primary_window: {
+          used_percent: 0,
+          limit_window_seconds: 18000,
+          reset_after_seconds: 17640,
+        },
+        secondary_window: {
+          used_percent: 0,
+          limit_window_seconds: 604800,
+          reset_after_seconds: 572400,
+        },
+      },
+    },
+  ],
+});
+
+const directSparkExpectations = [
+  ["primary", 2],
+  ["secondary", 4],
+  ["tertiary", 0],
+  ["quaternary", 0],
+];
+directSparkExpectations.forEach(([tier, expected]) => {
+  const actual = directCodexSpark.usage[tier]?.usedPercent;
+  if (actual !== expected) {
+    throw new Error(
+      `Direct Codex Spark: expected ${tier} at ${expected}% used, got ${actual}`,
+    );
+  }
+});
+const expectedDirectSparkLabels = [
+  "5-Hour Window",
+  "Weekly Window",
+  "Codex Spark 5-hour",
+  "Codex Spark Weekly",
+];
+if (
+  JSON.stringify(directCodexSpark.labels) !==
+  JSON.stringify(expectedDirectSparkLabels)
+) {
+  throw new Error(
+    `Direct Codex Spark: expected labels ${JSON.stringify(expectedDirectSparkLabels)}, got ${JSON.stringify(directCodexSpark.labels)}`,
+  );
+}
+console.log("✓ Direct Codex additional_rate_limits render as Spark tiers");
+
 // Codex dashboard metadata that is available from the Linux usage endpoint.
 const codexDashboardPayload = {
   email: "user@example.com",
