@@ -1,6 +1,8 @@
 import {
   calculateUsagePace,
+  deriveCreditsPercent,
   formatResetDescription,
+  normalizeDetailSections,
   UsageApiClient,
 } from "./usageApi.js";
 
@@ -44,18 +46,53 @@ const codexSparkUsage = {
   ],
 };
 
+// OpenRouter CLI (v0.55.0): `codexbar --provider openrouter --source api --format json`.
+// Hoisted to module scope so the testCases entry below and the top-level
+// normalizeDetailSections assertions share the same fixture.
+const openRouterDetailsPayload = {
+  loginMethod: "Balance: $0.82",
+  primary: { usedPercent: 0 },
+  details: [
+    {
+      title: "Credits",
+      rows: [
+        { label: "Remaining", value: "$0.82" },
+        { label: "Used", value: "$9.18" },
+        { label: "Total added", value: "$10.00" },
+      ],
+    },
+    {
+      title: "API key",
+      rows: [
+        { label: "API key budget", value: "$5.00" },
+        { label: "API key remaining", value: "$5.00" },
+        { label: "API key used", value: "$0.94" },
+        { label: "Reset window", value: "weekly" },
+        { label: "Today", value: "$0.12" },
+        { label: "This week", value: "$0.45" },
+        { label: "This month", value: "$0.94" },
+        { label: "Rate limit", value: "-1 requests / 10s" },
+      ],
+      chart: { kind: "bars", unit: "USD", points: [0.12, 0.45, 0.94] },
+    },
+    {
+      title: "Spend history",
+      rows: [
+        {
+          label: "Last 30 days",
+          value: "Unavailable right now",
+          secondaryValue: "Management API key not configured",
+        },
+      ],
+    },
+  ],
+};
+
 const testCases = [
   {
     name: "OpenRouter (User reported)",
-    data: {
-      loginMethod: "Balance: $35.05",
-      openRouterUsage: {
-        balance: 35.05187273999999,
-        totalCredits: 160,
-        totalUsage: 124.94812726,
-        usedPercent: 78.0925795375,
-      },
-    },
+    data: openRouterDetailsPayload,
+    expectedUsedPercent: 0,
   },
   {
     name: "OpenAI / Codex (Standard)",
@@ -403,3 +440,141 @@ if (ollamaSummary.usage.loginMethod !== "Ollama Cloud Pro") {
   throw new Error(`Expected Ollama Cloud Pro login method, got ${ollamaSummary.usage.loginMethod}`);
 }
 console.log("✓ Ollama Cloud HTML parser extracts Session and Weekly usage");
+
+// OpenRouter details: normalizeSummary must pass usage.details through untouched,
+// and normalizeDetailSections must sanitize it into a flat, render-safe shape.
+const normalizedOpenRouter = client.normalizeSummary(openRouterDetailsPayload, false);
+if (
+  !Array.isArray(normalizedOpenRouter.usage.details) ||
+  normalizedOpenRouter.usage.details.length !== 3
+) {
+  throw new Error(
+    `Expected normalizeSummary to pass through 3 detail sections, got ${JSON.stringify(normalizedOpenRouter.usage.details)}`,
+  );
+}
+console.log("✓ usage.details survives normalizeSummary untouched");
+
+const openRouterSections = normalizeDetailSections(normalizedOpenRouter.usage.details);
+if (openRouterSections.length !== 3) {
+  throw new Error(`Expected 3 sanitized detail sections, got ${openRouterSections.length}`);
+}
+const rowCounts = openRouterSections.map((s) => s.rows.length).join(",");
+if (rowCounts !== "3,8,1") {
+  throw new Error(`Expected section row counts "3,8,1", got "${rowCounts}"`);
+}
+if (
+  openRouterSections[0].rows[0].label !== "Remaining" ||
+  openRouterSections[0].rows[0].value !== "$0.82"
+) {
+  throw new Error(
+    `Expected first Credits row to be Remaining/$0.82, got ${JSON.stringify(openRouterSections[0].rows[0])}`,
+  );
+}
+console.log("✓ normalizeDetailSections produces the correct sections and rows");
+
+if (!openRouterSections[1].hasChart || "chart" in openRouterSections[1]) {
+  throw new Error(
+    "Expected the API key section to record hasChart:true without leaking the raw chart",
+  );
+}
+console.log("✓ chart is detected via hasChart but not leaked into the sanitized shape");
+
+if (
+  openRouterSections[2].rows[0].secondaryValue !==
+  "Management API key not configured"
+) {
+  throw new Error(
+    `Expected Spend history secondaryValue to be preserved, got "${openRouterSections[2].rows[0].secondaryValue}"`,
+  );
+}
+console.log("✓ secondaryValue is preserved on sanitized rows");
+
+// Defensive shapes: anything that isn't a usable details array normalizes to [].
+[undefined, null, "nope", 42, {}, { rows: [] }].forEach((input) => {
+  const result = normalizeDetailSections(input);
+  if (result.length !== 0) {
+    throw new Error(
+      `Expected normalizeDetailSections(${JSON.stringify(input)}) to be [], got ${JSON.stringify(result)}`,
+    );
+  }
+});
+console.log("✓ normalizeDetailSections defends against non-array and malformed inputs");
+
+// A section with only a chart (no rows) is dropped, not rendered as a bare title.
+if (normalizeDetailSections([{ title: "Chart only", chart: { kind: "bars" } }]).length !== 0) {
+  throw new Error("Expected a chart-only section with no rows to be dropped");
+}
+console.log("✓ chart-only sections with no rows are dropped");
+
+// Value coercion: 0 must render as "0" (not "" via a naive `row.value || ""` guard),
+// NaN/objects must coerce to "", and rows need at least a label or a value to survive.
+const coercionRows = normalizeDetailSections([
+  {
+    title: "Coercion",
+    rows: [
+      { label: "num", value: 0 },
+      { label: "nan", value: NaN },
+      { label: "obj", value: {} },
+      { label: "", value: "" },
+      { label: "b", value: true },
+    ],
+  },
+])[0].rows;
+if (coercionRows.length !== 4) {
+  throw new Error(`Expected 4 surviving rows after coercion, got ${coercionRows.length}`);
+}
+if (coercionRows[0].value !== "0") {
+  throw new Error(`Expected numeric 0 to coerce to "0", got "${coercionRows[0].value}"`);
+}
+if (coercionRows[1].value !== "") {
+  throw new Error(`Expected NaN to coerce to "", got "${coercionRows[1].value}"`);
+}
+if (coercionRows[2].value !== "") {
+  throw new Error(`Expected an object value to coerce to "", got "${coercionRows[2].value}"`);
+}
+console.log("✓ row value coercion handles 0, NaN, objects, and empty rows correctly");
+
+// Claude regression guard: providers with no `details` key must be unaffected.
+if (normalizeDetailSections(normalizedDashboard.usage.details).length !== 0) {
+  throw new Error("Expected a provider with no details key to produce zero sections");
+}
+console.log("✓ providers without usage.details are unaffected (Claude/Codex regression guard)");
+
+// deriveCreditsPercent: OpenRouter's degenerate {usedPercent:0, windowSeconds:0}
+// "Usage Window" tier is meaningless; derive a real percent from the API key
+// section's budget and remaining/used if present, or fall back to Credits section.
+const apiKeyCreditsPercent = deriveCreditsPercent(openRouterSections);
+if (apiKeyCreditsPercent === null || Math.abs(apiKeyCreditsPercent - 0) > 0.0001) {
+  throw new Error(`Expected API key budget-derived percent of 0, got ${apiKeyCreditsPercent}`);
+}
+console.log("✓ deriveCreditsPercent computes used% from API key budget and remaining");
+
+const customApiKeySection = [
+  {
+    title: "API key",
+    rows: [
+      { label: "API key budget", value: "$5.00" },
+      { label: "API key remaining", value: "$1.00" },
+    ],
+  },
+];
+const customApiKeyPercent = deriveCreditsPercent(customApiKeySection);
+if (customApiKeyPercent === null || Math.abs(customApiKeyPercent - 80) > 0.0001) {
+  throw new Error(`Expected custom API key budget percent of 80, got ${customApiKeyPercent}`);
+}
+console.log("✓ deriveCreditsPercent computes 80% used when $1.00 remains of $5.00 API key budget");
+
+const creditsOnlySections = openRouterSections.filter((s) => s.title !== "API key");
+const creditsFallbackPercent = deriveCreditsPercent(creditsOnlySections);
+if (creditsFallbackPercent === null || Math.abs(creditsFallbackPercent - 91.8) > 0.0001) {
+  throw new Error(`Expected Credits section fallback percent of 91.8, got ${creditsFallbackPercent}`);
+}
+console.log("✓ deriveCreditsPercent falls back to Credits section's Used/Total added when no API key budget");
+
+if (deriveCreditsPercent([]) !== null) {
+  throw new Error("Expected deriveCreditsPercent([]) to be null (no sections)");
+}
+if (deriveCreditsPercent(normalizeDetailSections(normalizedDashboard.usage.details)) !== null) {
+  throw new Error("Expected deriveCreditsPercent to be null for a provider with no details");
+}
+console.log("✓ deriveCreditsPercent is null when there's no parseable API key budget or Credits section");

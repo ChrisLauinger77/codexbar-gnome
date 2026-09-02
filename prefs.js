@@ -434,6 +434,21 @@ const CodexBarPrefsPage = GObject.registerClass(
       );
       group.add(showPacingInfoRow);
 
+      const showProviderDetailsRow = new Adw.SwitchRow({
+        title: _("Show Provider Details"),
+        subtitle: _(
+          "Display the extra detail sections reported by the provider CLI (credits, spend history, rate limits)",
+        ),
+        active: this._settings.get_boolean("show-provider-details"),
+      });
+      this._settings.bind(
+        "show-provider-details",
+        showProviderDetailsRow,
+        "active",
+        Gio.SettingsBindFlags.DEFAULT,
+      );
+      group.add(showProviderDetailsRow);
+
       return group;
     }
 

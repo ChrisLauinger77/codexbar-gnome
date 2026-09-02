@@ -146,6 +146,117 @@ export const formatResetDescription = (seconds, windowSeconds, now = new Date())
     return `Resets at ${resetStr} (in ${hours}h)`;
 };
 
+/**
+ * Sanitize the provider-supplied `details` array from the codexbar CLI into a
+ * flat, render-safe shape. Charts are intentionally dropped (not rendered yet).
+ * @param {unknown} details
+ * @returns {Array<{title: string, rows: Array<{label: string, value: string, secondaryValue: string}>, hasChart: boolean}>}
+ */
+export function normalizeDetailSections(details) {
+    if (!Array.isArray(details)) return [];
+
+    const toText = (value) => {
+        if (typeof value === 'string') return value.trim();
+        if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '';
+        if (typeof value === 'boolean') return String(value);
+        return '';   // null, undefined, objects, arrays -> not renderable
+    };
+
+    const sections = [];
+    details.forEach((section) => {
+        if (!section || typeof section !== 'object') return;
+
+        const rows = [];
+        if (Array.isArray(section.rows)) {
+            section.rows.forEach((row) => {
+                if (!row || typeof row !== 'object') return;
+                const label = toText(row.label);
+                const value = toText(row.value);
+                if (!label && !value) return;
+                rows.push({ label, value, secondaryValue: toText(row.secondaryValue) });
+            });
+        }
+
+        if (rows.length === 0) return;   // chart-only / empty -> drop section
+
+        sections.push({
+            title: toText(section.title),
+            rows,
+            hasChart: Boolean(section.chart && typeof section.chart === 'object'),
+        });
+    });
+
+    return sections;
+}
+
+/**
+ * Derive a used-percent from detail sections (see normalizeDetailSections),
+ * for providers that report a balance/budget instead of a time-bounded usage window
+ * (e.g. OpenRouter's `{usedPercent: 0, windowSeconds: 0}` placeholder tier).
+ * Prefers the "API key" section's budget and remaining/used if present, and
+ * falls back to the "Credits" section's total added and remaining/used.
+ * Returns null if no valid budget/total and remaining/used pair is found.
+ * @param {Array<{title: string, rows: Array<{label: string, value: string}>}>} sections
+ * @returns {number|null}
+ */
+export function deriveCreditsPercent(sections) {
+    if (!Array.isArray(sections)) return null;
+
+    const parseAmount = (value) => {
+        if (typeof value !== 'string') return NaN;
+        const match = value.replace(/,/g, '').match(/-?\d+(\.\d+)?/);
+        return match ? parseFloat(match[0]) : NaN;
+    };
+
+    const findSection = (titles) => sections.find(
+        (section) => section && typeof section.title === 'string' &&
+            titles.includes(section.title.trim().toLowerCase())
+    );
+
+    const findAmount = (section, labels) => {
+        if (!section || !Array.isArray(section.rows)) return NaN;
+        const row = section.rows.find(
+            (r) => r && typeof r.label === 'string' &&
+                labels.includes(r.label.trim().toLowerCase())
+        );
+        return row ? parseAmount(row.value) : NaN;
+    };
+
+    // 1. Try API key section (API key budget & remaining/used)
+    const apiKeySection = findSection(['api key', 'api_key', 'api keys']);
+    if (apiKeySection) {
+        const budget = findAmount(apiKeySection, ['api key budget', 'budget', 'key budget']);
+        if (Number.isFinite(budget) && budget > 0) {
+            const remaining = findAmount(apiKeySection, ['api key remaining', 'remaining', 'key remaining']);
+            if (Number.isFinite(remaining)) {
+                return Math.min(100, Math.max(0, ((budget - remaining) / budget) * 100));
+            }
+            const used = findAmount(apiKeySection, ['api key used', 'used', 'key used']);
+            if (Number.isFinite(used)) {
+                return Math.min(100, Math.max(0, (used / budget) * 100));
+            }
+        }
+    }
+
+    // 2. Fall back to Credits section (Total added & remaining/used)
+    const creditsSection = findSection(['credits', 'credit']);
+    if (creditsSection) {
+        const total = findAmount(creditsSection, ['total added', 'total', 'total credits', 'credits added']);
+        if (Number.isFinite(total) && total > 0) {
+            const remaining = findAmount(creditsSection, ['remaining', 'credits remaining']);
+            if (Number.isFinite(remaining)) {
+                return Math.min(100, Math.max(0, ((total - remaining) / total) * 100));
+            }
+            const used = findAmount(creditsSection, ['used', 'credits used']);
+            if (Number.isFinite(used)) {
+                return Math.min(100, Math.max(0, (used / total) * 100));
+            }
+        }
+    }
+
+    return null;
+}
+
 export const calculateUsagePace = (usageWindow) => {
     const usedPercent = Number(usageWindow?.usedPercent);
     const windowSeconds = Number(usageWindow?.windowSeconds);

@@ -87,6 +87,32 @@ The extension will automatically attempt to locate the `codexbar` binary in comm
 
 Certain vendors have specific fields in Codexbar CLI, whose interpretation may not have been implemented so this is a great opportunity for you to implement support (if you want) and do a PR.
 
+### API Keys (e.g. OpenRouter)
+
+Some providers (OpenRouter with `--source api`) authenticate the CodexBar CLI via an environment variable, e.g. `OPENROUTER_API_KEY`, instead of a token cached on disk. Setting that variable in `~/.zshrc`, `~/.bashrc`, or similar is **not enough**: GNOME Shell is started by your login/display manager, not by an interactive shell, so it never sources your shell's dotfiles, and any command the extension runs (as a child process of GNOME Shell) inherits GNOME Shell's environment, not your terminal's.
+
+To make the variable visible to the extension, add it to your systemd user environment instead:
+
+```bash
+mkdir -p ~/.config/environment.d
+echo 'OPENROUTER_API_KEY=sk-or-v1-...' > ~/.config/environment.d/codexbar.conf
+chmod 600 ~/.config/environment.d/codexbar.conf
+```
+
+Then log out and log back in. `environment.d` files are only read once, when your `systemd --user` manager starts — if it's still running from before you added the file (e.g. lingering is enabled: `loginctl show-user $USER | grep Linger`), a normal logout/login won't pick it up. In that case, apply it to the running instance once, then log out/in as usual:
+
+```bash
+systemctl --user import-environment OPENROUTER_API_KEY
+```
+
+You can confirm GNOME Shell actually has the variable with:
+
+```bash
+tr '\0' '\n' < /proc/$(pgrep -x gnome-shell)/environ | grep OPENROUTER_API_KEY
+```
+
+Without it, `codexbar --provider openrouter --source api` still returns valid JSON, but with a top-level `error` field and no `usage.details` — so the OpenRouter tab shows only a bare, empty tier instead of the Credits / API key / Spend history breakdown.
+
 ### Display Mode
 
 You can choose how metrics are displayed:

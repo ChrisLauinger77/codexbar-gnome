@@ -4,13 +4,19 @@ import Gio from "gi://Gio";
 import GLib from "gi://GLib";
 import St from "gi://St";
 import Clutter from "gi://Clutter";
+import Pango from "gi://Pango";
 import {
   Extension,
   gettext as _,
 } from "resource:///org/gnome/shell/extensions/extension.js";
 import * as PanelMenu from "resource:///org/gnome/shell/ui/panelMenu.js";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
-import { calculateUsagePace, UsageApiClient } from "./usageApi.js";
+import {
+  calculateUsagePace,
+  deriveCreditsPercent,
+  normalizeDetailSections,
+  UsageApiClient,
+} from "./usageApi.js";
 import { loadToken, nullTokenSchema } from "./secret.js";
 
 function logDev(msg) {
@@ -121,6 +127,7 @@ export default class CodexBarExtension extends Extension {
       "changed::display-mode", () => this._updateUI(),
       "changed::show-logos", () => this._updateUI(),
       "changed::show-pacing-info", () => this._updateUI(),
+      "changed::show-provider-details", () => this._updateUI(),
       "changed::first-run", () => this._updateUI(),
       "changed::dev-custom-output-enabled", () => this._onSettingsChanged(),
       "changed::dev-custom-output-provider-name", () => this._onSettingsChanged(),
@@ -536,13 +543,25 @@ export default class CodexBarExtension extends Extension {
     let tierCount = 0;
 
     const activeData = this._providersData[this._activeProviderIndex];
+    // A tier with usedPercent:0 and no windowSeconds isn't a real usage window
+    // (e.g. OpenRouter's balance placeholder) - derive a meaningful percent from
+    // the Credits detail section instead, or drop the tier if none is available.
+    const creditsPercent = deriveCreditsPercent(
+      normalizeDetailSections(activeData?.data?.usage?.details),
+    );
+    const isDegenerateTier = (tierData) =>
+      !!tierData && !tierData.windowSeconds && tierData.usedPercent === 0;
+
     if (activeData && activeData.data && activeData.data.usage) {
       const usage = activeData.data.usage;
       const tiers = ["primary", "secondary", "tertiary", "quaternary"];
 
       tiers.forEach((tier) => {
         if (usage[tier] && usage[tier].usedPercent !== undefined) {
-          let p = this._normalizePercent(usage[tier].usedPercent);
+          if (isDegenerateTier(usage[tier]) && creditsPercent === null) return;
+          let p = isDegenerateTier(usage[tier])
+            ? creditsPercent
+            : this._normalizePercent(usage[tier].usedPercent);
           totalPercent += displayMode === "remaining" ? 100 - p : p;
           tierCount++;
         }
@@ -742,19 +761,31 @@ export default class CodexBarExtension extends Extension {
       this._contentBox.add_child(accountBox);
     }
 
+    this._renderDetailSections(usage);
+
     // Usage bars for each tier
     // Barras de uso para cada nivel
     const tiers = ["primary", "secondary", "tertiary", "quaternary"];
     const discoveredLabels = activeData.labels || [];
     let hasTiers = false;
 
-    const usageEntries = tiers.map((tier, tierIdx) => ({
-      data: usage[tier],
-      showPace: true,
-      title:
+    const usageEntries = tiers.map((tier, tierIdx) => {
+      let tierData = usage[tier];
+      let title =
         discoveredLabels[tierIdx] ||
-        tier.charAt(0).toUpperCase() + tier.slice(1),
-    }));
+        tier.charAt(0).toUpperCase() + tier.slice(1);
+
+      if (isDegenerateTier(tierData)) {
+        if (creditsPercent === null) {
+          tierData = null;
+        } else {
+          tierData = { ...tierData, usedPercent: creditsPercent };
+          title = _("Credits");
+        }
+      }
+
+      return { data: tierData, showPace: true, title };
+    });
     usageEntries.push({
       data: usage.codeReview,
       showPace: false,
@@ -934,6 +965,78 @@ export default class CodexBarExtension extends Extension {
 
       this._contentBox.add_child(costBox);
     }
+  }
+
+  /**
+   * Render provider-supplied detail sections (codexbar `usage.details`).
+   * @param {object} usage
+   */
+  _renderDetailSections(usage) {
+    if (!this._settings.get_boolean("show-provider-details")) return;
+
+    const sections = normalizeDetailSections(usage?.details);
+    if (sections.length === 0) return;
+
+    const detailsBox = new St.BoxLayout({
+      vertical: true,
+      style_class: "codexbar-details-section",
+      x_expand: true,
+    });
+
+    sections.forEach((section) => {
+      const groupBox = new St.BoxLayout({
+        vertical: true,
+        style_class: "codexbar-detail-group",
+        x_expand: true,
+      });
+
+      if (section.title) {
+        groupBox.add_child(
+          new St.Label({
+            text: section.title,
+            style_class: "codexbar-detail-title",
+          }),
+        );
+      }
+
+      section.rows.forEach((row) => {
+        const rowBox = new St.BoxLayout({ vertical: false, x_expand: true });
+
+        const labelWidget = new St.Label({
+          text: row.label,
+          style_class: "codexbar-detail-label",
+        });
+        labelWidget.clutter_text.ellipsize = Pango.EllipsizeMode.END;
+        labelWidget.opacity = 200;
+        rowBox.add_child(labelWidget);
+
+        const valueWidget = new St.Label({
+          text: row.value,
+          style_class: "codexbar-detail-value",
+          x_align: Clutter.ActorAlign.END,
+          x_expand: true,
+        });
+        valueWidget.clutter_text.ellipsize = Pango.EllipsizeMode.END;
+        rowBox.add_child(valueWidget);
+
+        groupBox.add_child(rowBox);
+
+        if (row.secondaryValue) {
+          const noteWidget = new St.Label({
+            text: row.secondaryValue,
+            style_class: "codexbar-detail-note",
+          });
+          noteWidget.clutter_text.line_wrap = true;
+          noteWidget.clutter_text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
+          noteWidget.opacity = 160;
+          groupBox.add_child(noteWidget);
+        }
+      });
+
+      detailsBox.add_child(groupBox);
+    });
+
+    this._contentBox.add_child(detailsBox);
   }
 
   /**
