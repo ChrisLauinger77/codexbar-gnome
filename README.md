@@ -7,7 +7,7 @@ A GNOME Shell extension to monitor AI provider usage metrics directly from the s
 ## Features
 
 - Real-time monitoring of AI provider usage (Gemini, OpenAI, etc).
-- Support for multiple usage tiers
+- Support for standard Codex and Codex Spark 5-hour/weekly usage tiers
 - Toggle between Remaining Quota and Used Quota display modes.
 - Automatic background refreshes with configurable intervals.
 - Visual warnings (color changes) when reaching quota limits.
