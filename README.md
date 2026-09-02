@@ -18,7 +18,10 @@ A GNOME Shell extension to monitor AI provider usage metrics directly from the s
 - Added support to show AI economic expenditure
 
 ## Updates  
-- Update to support Ollama Cloud!
+- Support Codex Spark usage tiers from the direct ChatGPT endpoint (`additional_rate_limits`)
+- Render provider-supplied detail sections (OpenRouter credits, API key budget, spend history) with a new `show-provider-details` toggle
+- Derive a meaningful usage percent for balance-based providers (e.g. OpenRouter) from the Credits / API key sections
+- Welcome screen now installs the cookie importer and SSL helper scripts directly from the repo (raw GitHub) instead of PyPI
 
 ## Requirements
 
@@ -37,18 +40,18 @@ Homebrew exists for Linux (and is a good package manager). For those who don't k
 ```
 
 ### Install Cookie Importer (only for Codex users)
-It is now distributed separately from the extension.  
+It is now distributed separately from the extension and no longer requires PyPI. Download it directly from the repo into `~/.local/bin` (the extension looks there by default):
 ```bash
-pip install codexbar-cookie-importer
+mkdir -p ~/.local/bin && curl -fsSL https://raw.githubusercontent.com/InledGroup/codexbar-gnome/main/scripts/codexbar-cookie-importer -o ~/.local/bin/codexbar-cookie-importer && chmod +x ~/.local/bin/codexbar-cookie-importer
 ```
+It is a dependency-free bash script (uses `secret-tool`, `openssl`, `sqlite3`).
 
 ### Install helper to Trust the Certificate of the Antigravity Language Server (only for Antigravity users)
-This minimal Python script is invoked by the extension when you click on the trust antigravity cert button and what it does is save it in the gnome keyring, elevating privileges.   
-Since it elevates privileges, it would be unreasonable to integrate the elevation logic into the extension (as JustPerfection told me) so it is served as a standalone python package that the user must decide to install, thus complying with GJS guidelines.
+This minimal script is invoked by the extension when you click on the trust antigravity cert button and what it does is save the certificate in the system trust store, elevating privileges.   
+Since it elevates privileges, it would be unreasonable to integrate the elevation logic into the extension (as JustPerfection told me) so it is served as a standalone script that the user must decide to install, thus complying with GJS guidelines. It is now a dependency-free bash script (no PyPI):
 
 ```bash
-pip install codexbar-ssl-helper
-
+mkdir -p ~/.local/bin && curl -fsSL https://raw.githubusercontent.com/InledGroup/codexbar-gnome/main/scripts/codexbar-ssl-helper -o ~/.local/bin/codexbar-ssl-helper && chmod +x ~/.local/bin/codexbar-ssl-helper && codexbar-ssl-helper
 ```
 
 
