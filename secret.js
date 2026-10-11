@@ -5,7 +5,6 @@ import Secret from 'gi://Secret';
 const SECRET_SCHEMA_NAME = 'org.gnome.shell.extensions.codexbar.token';
 
 // Lazily initialize the schema to avoid creating GObject instances before enable()
-// Inicializar el esquema de forma perezosa (lazy) para evitar crear instancias de GObject antes de enable()
 let _tokenSchema = null;
 
 function _getSchema() {

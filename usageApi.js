@@ -7,7 +7,6 @@ import { OllamaSettingsFetcher } from './adapters/OllamaSettingsFetcher.js';
 
 import { CliSubprocessFetcher } from './adapters/CliSubprocessFetcher.js';
 
-// This is obviously for ChatGPT, not everything. I have to change the name of the constant, but I'll do it later.
 const API_BASE_URL = 'https://chatgpt.com';
 const SUMMARY_ENDPOINT = '/backend-api/wham/usage';
 const ME_ENDPOINT = '/backend-api/me';
@@ -275,7 +274,6 @@ export function deriveCreditsPercent(sections) {
         return row ? parseAmount(row.value) : NaN;
     };
 
-    // 1. Try API key section (API key budget & remaining/used)
     const apiKeySection = findSection(['api key', 'api_key', 'api keys']);
     if (apiKeySection) {
         const budget = findAmount(apiKeySection, ['api key budget', 'budget', 'key budget']);
@@ -291,7 +289,6 @@ export function deriveCreditsPercent(sections) {
         }
     }
 
-    // 2. Fall back to Credits section (Total added & remaining/used)
     const creditsSection = findSection(['credits', 'credit']);
     if (creditsSection) {
         const total = findAmount(creditsSection, ['total added', 'total', 'total credits', 'credits added']);
@@ -386,7 +383,6 @@ export class UsageApiClient {
      * Normalizes the API payload into a unified structure.
      */
     normalizeSummary(payload, isAntigravity = false) {
-        // Detect if the provider is antigravity
         // Detect whether the provider is antigravity
         const isAnti = isAntigravity ||
             payload?.identity?.providerID === "antigravity" ||
@@ -464,10 +460,8 @@ export class UsageApiClient {
             };
         }
 
-        // If it already has structured tiers, normalize them in place to keep order,
-        // then fill any remaining tier slots with extraRateWindows (e.g. Codex Spark)
         // If structured tiers already exist, normalize them in order and
-        // and fill the remaining tiers from extraRateWindows (e.g. Codex Spark)
+        // fill remaining slots from extraRateWindows (e.g. Codex Spark)
         const canonicalRateLimit = payload?.rate_limit || payload?.rateLimit;
         if (
             payload.primary ||
@@ -616,7 +610,6 @@ export class UsageApiClient {
             addWindow(windows, makeWindow(obj));
 
             // Recurse into all keys
-            // Iterate over all keys
             for (const key in obj) {
                 collect(obj[key]);
             }
@@ -625,7 +618,6 @@ export class UsageApiClient {
         collect(payload);
         
         // De-duplicate windows
-        // Eliminar ventanas duplicadas
         return dedupe(windows);
     }
 }

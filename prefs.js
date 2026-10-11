@@ -152,7 +152,6 @@ const CodexBarPrefsPage = GObject.registerClass(
         ),
       });
 
-      // 1. Toggle Custom Output
       const enabledRow = new Adw.SwitchRow({
         title: _("Test with Custom CLI Output"),
         subtitle: _(
@@ -168,7 +167,6 @@ const CodexBarPrefsPage = GObject.registerClass(
       );
       group.add(enabledRow);
 
-      // 2. Mock Provider Name
       const providerNameRow = new Adw.EntryRow({
         title: _("Simulated Provider Name"),
         text: this._settings.get_string("dev-custom-output-provider-name") || "Mock Provider",
@@ -181,7 +179,6 @@ const CodexBarPrefsPage = GObject.registerClass(
       );
       group.add(providerNameRow);
 
-      // 3. Mock JSON Input
       const jsonRow = new Adw.ActionRow({
         title: _("Codexbar-CLI custom output"),
         subtitle: _("Paste the raw JSON output to test"),
@@ -240,7 +237,6 @@ const CodexBarPrefsPage = GObject.registerClass(
         ),
       });
 
-      // Pull Request / Contribute
       const prRow = new Adw.ActionRow({
         title: _("Add a New Provider"),
         subtitle: _(
@@ -263,7 +259,6 @@ const CodexBarPrefsPage = GObject.registerClass(
       prRow.add_suffix(prBtn);
       group.add(prRow);
 
-      // Review on GNOME Extensions
       const reviewRow = new Adw.ActionRow({
         title: _("Leave a Review"),
         subtitle: _(
@@ -286,7 +281,6 @@ const CodexBarPrefsPage = GObject.registerClass(
       reviewRow.add_suffix(reviewBtn);
       group.add(reviewRow);
 
-      // Contact Inled
       const contactRow = new Adw.ActionRow({
         title: _("Contact Inled"),
         subtitle: _("Questions? Suggestions? Write to us at hi@inled.es"),
@@ -306,7 +300,6 @@ const CodexBarPrefsPage = GObject.registerClass(
       contactRow.add_suffix(contactBtn);
       group.add(contactRow);
 
-      // Visit Website
       const webRow = new Adw.ActionRow({
         title: _("Visit inled.es"),
         subtitle: _(
@@ -326,7 +319,6 @@ const CodexBarPrefsPage = GObject.registerClass(
       webRow.add_suffix(webBtn);
       group.add(webRow);
 
-      // Social Media
       const socialRow = new Adw.ActionRow({
         title: _("Join the Community"),
         subtitle: _("¡We have new Discord and Matrix channels!"),
@@ -848,7 +840,6 @@ const CodexBarPrefsPage = GObject.registerClass(
       const processedIds = new Set();
       const processedNames = new Set();
 
-      // 1. Predefined Providers
       PREDEFINED_PROVIDERS.forEach((info) => {
         const infoNameLower = info.name.toLowerCase();
         const activeData =
@@ -862,7 +853,6 @@ const CodexBarPrefsPage = GObject.registerClass(
         group.add(createProviderRow(info, activeData));
       });
 
-      // 2. Custom Providers
       activeProviders.forEach((p) => {
         const pNameLower = p.name.toLowerCase();
         if (!processedIds.has(p.id) && !processedNames.has(pNameLower)) {
@@ -880,7 +870,6 @@ const CodexBarPrefsPage = GObject.registerClass(
         }
       });
 
-      // 3. Add Custom Provider Button
       const addBtnRow = new Adw.ActionRow({
         title: _("Add Custom Provider"),
         subtitle: _("The extension should parse it correctly."),
@@ -940,7 +929,6 @@ const CodexBarPrefsPage = GObject.registerClass(
                 },
                 newProvider,
               );
-              // Add before the "Add Custom Provider" button
               group.add(row);
               // Manually move it up if needed, but Adw.PreferencesGroup appends
               // In GNOME 45+ we can't easily reorder children in PreferencesGroup
