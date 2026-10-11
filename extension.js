@@ -200,8 +200,6 @@ export default class CodexBarExtension extends Extension {
       this._settings = null;
     }
 
-    // Step 5: Destroy all UI elements and the indicator
-    // Paso 5: Destruir todos los elementos de la interfaz y el indicador
     if (this._iconFill) {
       this._iconFill.destroy();
       this._iconFill = null;
@@ -828,8 +826,6 @@ export default class CodexBarExtension extends Extension {
 
     this._renderDetailSections(usage);
 
-    // Usage bars for each tier
-    // Usage bar for each tier
     const tiers = ["primary", "secondary", "tertiary", "quaternary"];
     const discoveredLabels = activeData.labels || [];
     let hasTiers = false;
@@ -1121,8 +1117,6 @@ export default class CodexBarExtension extends Extension {
 
     // Known provider keys for fallback matching of custom or renamed providers
     // (e.g. a custom "Codex CLI" provider still shows the Codex logo).
-    // Claves de proveedores conocidos para la coincidencia alternativa de
-    // proveedores personalizados o renombrados.
     const knownKeys = [
       "codex",
       "claude",
